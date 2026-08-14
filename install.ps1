@@ -1,8 +1,11 @@
-﻿# dsh-plugins 引导安装脚本
-# 用法：
+# dsh-plugins 引导安装脚本
+# 用法（从仓库克隆目录运行）：
 #   powershell -ExecutionPolicy Bypass .\install.ps1              # 安装仓库里全部插件
 #   powershell -ExecutionPolicy Bypass .\install.ps1 dsh-repo-sync # 只装一个
 #   powershell -ExecutionPolicy Bypass .\install.ps1 dsh-repo-sync -Copy  # 复制模式（默认链接）
+#
+# 远程一键（无需克隆，自动拉取到 ~\.dsh\plugins-src）：
+#   powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins/master/install-remote.ps1 | iex"
 #
 # 作用：为每个插件创建 junction 链接（或复制）到 DSH profile 的 node_modules，
 # 并自动把注册行写入 cordis.patch.yml（幂等）。完成后重启 DSH 生效。
