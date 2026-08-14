@@ -52,6 +52,13 @@ const CSS = `
 .dshv-err{font-size:12px;color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;word-break:break-all}
 .dshv-video{width:100%;border-radius:10px;margin-top:8px;background:#000}
 .dshv-hint{font-size:11px;color:var(--dsw-alias-label-secondary);line-height:16px}
+.dshv-jobrow{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px}
+.dshv-jobrow:last-child{border-bottom:0}
+.dshv-jobid{flex:none;font-family:var(--ds-font-family-code,monospace);font-size:11px;color:var(--dsw-alias-label-secondary)}
+.dshv-jobmeta{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}
+.dshv-jobst{flex:none;font-size:11px}
+.dshv-jobst[data-done="1"]{color:var(--dsw-alias-state-success-primary)}
+.dshv-jobst[data-err="1"]{color:var(--dsw-alias-state-error-primary)}
 `;
 
 function injectCss() {
@@ -103,6 +110,7 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 	const [ready, setReady] = useState<boolean | null>(null);
 	const [depsError, setDepsError] = useState<string | null>(null);
 	const [job, setJob] = useState<Job | null>(null);
+	const [recentJobs, setRecentJobs] = useState<Job[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [msg, setMsg] = useState('');
 	const pollRef = useRef<number | null>(null);
@@ -170,6 +178,7 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 				setDepsError(d.depsError || null);
 			})
 			.catch(() => alive && setReady(false));
+		loadJobs();
 		return () => {
 			alive = false;
 			if (pollRef.current) clearTimeout(pollRef.current);
@@ -187,6 +196,14 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 		setProps({ ...DEFAULT_PROPS, ...load('props-' + k, {}) });
 	};
 
+	const loadJobs = async () => {
+		try {
+			const r = await fetch('/video/jobs', { cache: 'no-store' });
+			const d = await r.json();
+			if (d.ok && Array.isArray(d.jobs)) setRecentJobs(d.jobs);
+		} catch (e) {}
+	};
+
 	const res = RESOLUTIONS[resIdx];
 
 	const poll = async (id: string) => {
@@ -198,6 +215,7 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 			if (j.status === 'done' || j.status === 'error' || j.status === 'cancelled') {
 				setBusy(false);
 				setMsg('');
+				loadJobs();
 				return;
 			}
 		} catch (e) {}
@@ -423,6 +441,38 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 						已输出 {job.width}×{job.height} @ {fps}fps · {seconds}s（{job.composition}）
 					</div>
 				)}
+			</div>
+
+			<div className="dshv-card">
+				<div className="dshv-card-t">
+					最近渲染（含智能体生成）
+					<button className="dshv-btn" data-tone="ghost" style={{ float: 'right', padding: '2px 10px', fontSize: 11 }} onClick={loadJobs}>刷新</button>
+				</div>
+				{recentJobs.length === 0
+					? <div className="dshv-hint">暂无渲染记录（手动或让智能体调用 video_render 生成）</div>
+					: recentJobs.map((rj) => {
+						const done = rj.status === 'done';
+						const err = rj.status === 'error';
+						return (
+							<div className="dshv-jobrow" key={rj.id}>
+								<span className="dshv-jobid">{rj.id}</span>
+								<span className="dshv-jobmeta">{rj.composition || '—'} · {rj.width}×{rj.height}</span>
+								<span className="dshv-jobst" data-done={done ? '1' : '0'} data-err={err ? '1' : '0'}>
+									{done ? '✓ 完成' : err ? '✗ 失败' : `${rj.status} ${Math.round((rj.progress || 0) * 100)}%`}
+								</span>
+								{done && rj.outputUrl && (
+									<a className="dshv-btn" data-tone="ghost" href={rj.outputUrl} download style={{ textDecoration: 'none', padding: '2px 10px', fontSize: 11 }}>
+										⬇ 下载
+									</a>
+								)}
+								{done && rj.outputUrl && (
+									<a className="dshv-btn" data-tone="ghost" href={rj.outputUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', padding: '2px 10px', fontSize: 11 }}>
+										⛶ 播放
+									</a>
+								)}
+							</div>
+						);
+					})}
 			</div>
 
 			<div className="dshv-hint">

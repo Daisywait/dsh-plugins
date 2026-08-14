@@ -26794,6 +26794,13 @@ Check that all your Remotion packages are on the same version. If your dependenc
 .dshv-err{font-size:12px;color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;word-break:break-all}
 .dshv-video{width:100%;border-radius:10px;margin-top:8px;background:#000}
 .dshv-hint{font-size:11px;color:var(--dsw-alias-label-secondary);line-height:16px}
+.dshv-jobrow{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px}
+.dshv-jobrow:last-child{border-bottom:0}
+.dshv-jobid{flex:none;font-family:var(--ds-font-family-code,monospace);font-size:11px;color:var(--dsw-alias-label-secondary)}
+.dshv-jobmeta{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}
+.dshv-jobst{flex:none;font-size:11px}
+.dshv-jobst[data-done="1"]{color:var(--dsw-alias-state-success-primary)}
+.dshv-jobst[data-err="1"]{color:var(--dsw-alias-state-error-primary)}
 `;
   function injectCss() {
     if (typeof document === "undefined") return;
@@ -26830,6 +26837,7 @@ Check that all your Remotion packages are on the same version. If your dependenc
     const [ready, setReady] = (0, import_react121.useState)(null);
     const [depsError, setDepsError] = (0, import_react121.useState)(null);
     const [job, setJob] = (0, import_react121.useState)(null);
+    const [recentJobs, setRecentJobs] = (0, import_react121.useState)([]);
     const [busy, setBusy] = (0, import_react121.useState)(false);
     const [msg, setMsg] = (0, import_react121.useState)("");
     const pollRef = (0, import_react121.useRef)(null);
@@ -26887,6 +26895,7 @@ Check that all your Remotion packages are on the same version. If your dependenc
         setReady(!!d.ready);
         setDepsError(d.depsError || null);
       }).catch(() => alive && setReady(false));
+      loadJobs();
       return () => {
         alive = false;
         if (pollRef.current) clearTimeout(pollRef.current);
@@ -26901,6 +26910,14 @@ Check that all your Remotion packages are on the same version. If your dependenc
       setKindState(k);
       setProps({ ...DEFAULT_PROPS, ...load("props-" + k, {}) });
     };
+    const loadJobs = async () => {
+      try {
+        const r = await fetch("/video/jobs", { cache: "no-store" });
+        const d = await r.json();
+        if (d.ok && Array.isArray(d.jobs)) setRecentJobs(d.jobs);
+      } catch (e) {
+      }
+    };
     const res = RESOLUTIONS[resIdx];
     const poll = async (id) => {
       try {
@@ -26911,6 +26928,7 @@ Check that all your Remotion packages are on the same version. If your dependenc
         if (j.status === "done" || j.status === "error" || j.status === "cancelled") {
           setBusy(false);
           setMsg("");
+          loadJobs();
           return;
         }
       } catch (e) {
@@ -27099,6 +27117,29 @@ Check that all your Remotion packages are on the same version. If your dependenc
           job.composition,
           "\uFF09"
         ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime61.jsxs)("div", { className: "dshv-card", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime61.jsxs)("div", { className: "dshv-card-t", children: [
+          "\u6700\u8FD1\u6E32\u67D3\uFF08\u542B\u667A\u80FD\u4F53\u751F\u6210\uFF09",
+          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("button", { className: "dshv-btn", "data-tone": "ghost", style: { float: "right", padding: "2px 10px", fontSize: 11 }, onClick: loadJobs, children: "\u5237\u65B0" })
+        ] }),
+        recentJobs.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("div", { className: "dshv-hint", children: "\u6682\u65E0\u6E32\u67D3\u8BB0\u5F55\uFF08\u624B\u52A8\u6216\u8BA9\u667A\u80FD\u4F53\u8C03\u7528 video_render \u751F\u6210\uFF09" }) : recentJobs.map((rj) => {
+          const done = rj.status === "done";
+          const err = rj.status === "error";
+          return /* @__PURE__ */ (0, import_jsx_runtime61.jsxs)("div", { className: "dshv-jobrow", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("span", { className: "dshv-jobid", children: rj.id }),
+            /* @__PURE__ */ (0, import_jsx_runtime61.jsxs)("span", { className: "dshv-jobmeta", children: [
+              rj.composition || "\u2014",
+              " \xB7 ",
+              rj.width,
+              "\xD7",
+              rj.height
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("span", { className: "dshv-jobst", "data-done": done ? "1" : "0", "data-err": err ? "1" : "0", children: done ? "\u2713 \u5B8C\u6210" : err ? "\u2717 \u5931\u8D25" : `${rj.status} ${Math.round((rj.progress || 0) * 100)}%` }),
+            done && rj.outputUrl && /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("a", { className: "dshv-btn", "data-tone": "ghost", href: rj.outputUrl, download: true, style: { textDecoration: "none", padding: "2px 10px", fontSize: 11 }, children: "\u2B07 \u4E0B\u8F7D" }),
+            done && rj.outputUrl && /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("a", { className: "dshv-btn", "data-tone": "ghost", href: rj.outputUrl, target: "_blank", rel: "noreferrer", style: { textDecoration: "none", padding: "2px 10px", fontSize: 11 }, children: "\u26F6 \u64AD\u653E" })
+          ] }, rj.id);
+        })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("div", { className: "dshv-hint", children: "\u6E32\u67D3\u5728 DSH \u5BBF\u4E3B\u8FDB\u7A0B\u5B8C\u6210\uFF08@remotion/renderer\uFF0C\u9996\u6B21\u4F1A\u81EA\u52A8\u4E0B\u8F7D\u65E0\u5934\u6D4F\u89C8\u5668\u5185\u6838\uFF0C\u7EA6 110MB\uFF0C\u4EC5\u4E00\u6B21\uFF09\u3002 \u4FEE\u6539\u4EFB\u610F\u53C2\u6570\u540E\u9884\u89C8\u5373\u65F6\u66F4\u65B0\uFF1B\u70B9\u51FB\u300C\u6E32\u67D3 MP4\u300D\u540E\u6309\u6240\u9009\u5206\u8FA8\u7387\u8F93\u51FA H.264\u3002" })
     ] });

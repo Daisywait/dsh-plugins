@@ -395,7 +395,7 @@ function registerVideoTools(toolsCtx) {
         additionalProperties: false,
         properties: {
           ok: { type: 'boolean' },
-          job: VIDEO_OUTPUT_SCHEMA,
+          job: { oneOf: [VIDEO_OUTPUT_SCHEMA, { type: 'null' }] },
           error: { oneOf: [{ type: 'string' }, { type: 'null' }] }
         }
       },

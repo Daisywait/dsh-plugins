@@ -12,14 +12,29 @@ window.__ModuleLoader__.load({
 			".qt-bar{position:fixed;z-index:40;display:flex;align-items:center;gap:4px;padding:4px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-overlay);border-radius:10px;box-shadow:var(--dsw-shadow-lv2);pointer-events:auto}" +
 			".qt-bar button{border:none;background:none;border-radius:7px;color:var(--dsw-alias-label-primary);cursor:pointer;padding:5px 10px;font-size:12px;display:inline-flex;align-items:center;gap:4px}" +
 			".qt-bar button:hover{background:var(--dsw-alias-interactive-bg-hover)}" +
-			".qt-bar button:active{transform:translateY(1px)}";
+			".qt-bar button:active{transform:translateY(1px)}" +
+			".qt-dock{display:flex;flex-direction:column;gap:6px;width:100%;max-width:calc(var(--dsh-chat-content-width,748px) + 32px);margin:0 auto;padding:0 8px;box-sizing:border-box}" +
+			".qt-card{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:10px;padding:8px 12px;pointer-events:auto}" +
+			".qt-card-text{flex:1;min-width:0;max-height:120px;overflow-y:auto;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;user-select:text}" +
+			".qt-card-actions{flex:none;display:flex;gap:6px}" +
+			".qt-card-actions button{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer}" +
+			".qt-card-actions button:hover{background:var(--dsw-alias-interactive-bg-hover)}" +
+			".qt-card-actions button[data-tone=danger]{color:var(--dsw-alias-state-error-primary)}";
 
 		function apply(ctx) {
-			/* 引用能力枢纽：dock 常驻占位注册（有 inputActions），浮出工具条调用 */
-			const quoteHub = { handler: null };
-			const registerQuote = (fn) => {
-				quoteHub.handler = fn;
-				return () => { if (quoteHub.handler === fn) quoteHub.handler = null; };
+			/* 待发引用卡片：不可编辑，用户自行决定何时发送 */
+			const quoteStore = { items: [], listeners: new Set() };
+			let nextId = 1;
+			const bumpQuotes = () => quoteStore.listeners.forEach((fn) => fn((x) => (x || 0) + 1));
+			const addQuote = (text) => {
+				const t = String(text || "").trim();
+				if (!t) return;
+				quoteStore.items.push({ id: nextId++, text: t });
+				bumpQuotes();
+			};
+			const removeQuote = (id) => {
+				quoteStore.items = quoteStore.items.filter((q) => q.id !== id);
+				bumpQuotes();
 			};
 
 			/* 发送引用消息：先写草稿，等输入机器落地后再提交（避免提交到旧草稿被拒） */
@@ -67,20 +82,37 @@ window.__ModuleLoader__.load({
 				bumpSel();
 			};
 
-			/* 常驻引用发送器：dock 占位，只要有会话就可用；点引用 = 立即发送一条引用消息泡 */
-			function QuoteHub(props) {
-				const draftRef = react.useRef("");
-				draftRef.current = (props.input && props.input.draft) || "";
-				react.useEffect(() => registerQuote((text) => {
-					sendQuote(props.inputActions, draftRef.current || "", text);
-				}), []);
-				return null;
+			/* 引用卡片坞：输入框上方，不可编辑；每张卡片可单独发送/删除 */
+			function QuoteDock(props) {
+				const [, force] = react.useState(0);
+				react.useEffect(() => {
+					quoteStore.listeners.add(force);
+					return () => quoteStore.listeners.delete(force);
+				}, []);
+				const draft = (props.input && props.input.draft) || "";
+				if (quoteStore.items.length === 0) return null;
+				return react.createElement("div", { className: "qt-dock" },
+					quoteStore.items.map((q) => react.createElement("div", { className: "qt-card", key: q.id },
+						react.createElement("div", { className: "qt-card-text" }, q.text),
+						react.createElement("div", { className: "qt-card-actions" },
+							react.createElement("button", {
+								onClick: () => {
+									sendQuote(props.inputActions, draft, q.text);
+									removeQuote(q.id);
+								}
+							}, "发送"),
+							react.createElement("button", {
+								"data-tone": "danger",
+								onClick: () => removeQuote(q.id)
+							}, "删除")
+						)
+					))
+				);
 			}
 
-			/* 助手消息操作区 ⤴：引用当前选中文本（无选中则整条消息） */
+			/* 助手消息操作区 ⤴：把选中文本（无选中则整条消息）加入引用卡片 */
 			function QuoteAction(props) {
 				const messageId = props.messageId;
-				const draft = props.useInput((s) => s.draft);
 				const messageText = props.useSession((s) => {
 					const n = s.nodes.find((x) => x.kind === "assistant" && x.messageId === messageId);
 					if (!n || n.kind !== "assistant") return null;
@@ -103,13 +135,13 @@ window.__ModuleLoader__.load({
 					const text = selectedRef.current || messageText;
 					selectedRef.current = null;
 					if (!text) return;
-					sendQuote(props.inputActions, draft || "", text);
+					addQuote(text);
 				};
 
 				return react.createElement("button", {
 					className: "qt-btn",
-					title: "以引用回复（发送引用消息）",
-					"aria-label": "以引用回复（发送引用消息）",
+					title: "引用到输入区（待发卡片）",
+					"aria-label": "引用到输入区（待发卡片）",
 					onMouseDown: grabSelection,
 					onClick: quote
 				},
@@ -117,7 +149,7 @@ window.__ModuleLoader__.load({
 				);
 			}
 
-			/* 选区浮出工具条（overlay，全局）：⤴ 引用 / 复制 */
+			/* 选区浮出工具条（overlay，全局）：⤴ 加入引用卡片 / 复制 */
 			function QuoteToolbar(props) {
 				const [, force] = react.useState(0);
 				react.useEffect(() => {
@@ -138,7 +170,7 @@ window.__ModuleLoader__.load({
 				const doQuote = () => {
 					const text = selStore.text;
 					hideSel();
-					if (text && quoteHub.handler) quoteHub.handler(text);
+					addQuote(text);
 				};
 				const doCopy = () => {
 					const text = selStore.text;
@@ -169,11 +201,11 @@ window.__ModuleLoader__.load({
 
 			ctx.effect(() => {
 				const slots = ctx.get("slots");
-				let dHub, dAction, dToolbar;
+				let dDock, dAction, dToolbar;
 				if (slots !== undefined) {
-					dHub = slots.inject("conversation.input.dock", () => slots.register(
-						{ name: "conversation.input.dock", id: "quote-hub", order: 60 },
-						(props) => react.createElement(QuoteHub, props)
+					dDock = slots.inject("conversation.input.dock", () => slots.register(
+						{ name: "conversation.input.dock", id: "quote-dock", order: 60 },
+						(props) => react.createElement(QuoteDock, props)
 					));
 					dAction = slots.inject("conversation.chat.assistant-actions", () => slots.register(
 						{ name: "conversation.chat.assistant-actions", id: "quote", order: 20 },
@@ -185,11 +217,11 @@ window.__ModuleLoader__.load({
 					));
 				}
 				return () => {
-					if (dHub) { try { dHub(); } catch (e) {} }
+					if (dDock) { try { dDock(); } catch (e) {} }
 					if (dAction) { try { dAction(); } catch (e) {} }
 					if (dToolbar) { try { dToolbar(); } catch (e) {} }
 				};
-			}, "dsh-quote: selection toolbar + quote hub");
+			}, "dsh-quote: quote cards + selection toolbar");
 		}
 
 		exports.apply = apply;

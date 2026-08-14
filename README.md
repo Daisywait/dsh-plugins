@@ -67,7 +67,7 @@ powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins
 | dsh-skin-shiguangdailiren | 时光代理人壁纸 + 毛玻璃主题（明暗双套）；会话头部 🖌 打开右侧栏调节：透明度/水平位置/图片大小/GenUI 浓度/上传壁纸，全部自动保存；GenUI 卡片网页质感样式 |
 | dsh-repo-sync | 插件管理器：「仓库」标签页。已安装插件（状态 + 提交/同步 + 卸载）+ 仓库可安装（安装，官方 pnpm 方式）。提交自动 git add + commit + push |
 | dsh-quote | 消息引用：助手消息操作区 ⤴ 按钮，把该消息文本带进输入框（方便引用上下文） |
-| dsh-video | 视频工作室：会话头部「视频」标签页。Remotion 实时预览（标题卡/结束卡两种合成，可改文字、配色、Emoji、时长/帧率），一键渲染 H.264 MP4（720p/1080p），「全屏预览」在新浏览器标签页打开交互工作室 |
+| dsh-video | 视频工作室：会话头部「视频」标签页。Remotion 实时预览（标题卡/结束卡两种合成，可改文字、配色、Emoji、时长/帧率），一键渲染 H.264 MP4（720p/1080p），「全屏预览」在新浏览器标签页打开交互工作室。**智能体可直接调用 `video_render` / `video_job_status` 工具生成视频** |
 
 ## 开发流程
 
@@ -84,6 +84,15 @@ dsh-video 的 host 渲染栈（`@remotion/bundler`、`@remotion/renderer`）装�
 - 手动：`cd dsh-video && powershell -ExecutionPolicy Bypass .\scripts\install-deps.ps1`
 - 改客户端源码（`src/`、`remotion/src/`）后重跑 `node scripts/build.mjs` 重建 `client.js` / `studio/studio.js`，刷新页面生效。
 - `node_modules/`、`output/`、`.bundle/` 均已 gitignore。
+
+### 让智能体生成视频（模型工具）
+
+dsh-video 在 host 端通过 `ctx.tools` 注册两个模型可调用工具（无需额外配置，重启 DSH 后模型自动可见）：
+
+- **`video_render`**：渲染一段视频。参数：`kind`（Title/End）、`seconds`（5/10/15/20）、`fps`（24/30/60）、`width`/`height`、以及全部文案与配色（title/subtitle/byline/emoji/bg1/bg2/accent/textColor），`wait` 默认 true 等待完成并返回 `outputUrl` 成品地址；false 则立即返回 jobId。
+- **`video_job_status`**：按 `jobId` 查询进度与结果（适合 `wait:false` 后轮询）。
+
+用法示例（对模型说）：*「用 video_render 生成一个 10 秒 1080p 的标题卡视频，标题『你好，世界』，紫色渐变背景，等渲染完把链接给我」*。渲染结果同时出现在「视频」标签页的「最近渲染」列表里，可重播/下载。工具注册失败会把原因写进 `/video/status` 的 `lastError`，不影响标签页使用。
 
 ## 技术要点
 
