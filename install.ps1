@@ -1,4 +1,4 @@
-# dsh-plugins 引导安装脚本
+﻿# dsh-plugins 引导安装脚本
 # 用法（从仓库克隆目录运行）：
 #   powershell -ExecutionPolicy Bypass .\install.ps1              # 安装仓库里全部插件
 #   powershell -ExecutionPolicy Bypass .\install.ps1 dsh-repo-sync # 只装一个
