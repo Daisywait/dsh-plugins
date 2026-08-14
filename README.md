@@ -13,9 +13,22 @@ dsh-plugins/
 └── README.md
 ```
 
-## 安装插件（推荐：管理器一键安装）
+## 快速开始（首次引导）
 
-前提：`dsh-repo-sync` 已安装（见下）。
+插件管理器本身也是插件，第一次安装需要用仓库里的引导脚本（**只这一次**）：
+
+```powershell
+cd D:\Documents\dsh-plugins
+powershell -ExecutionPolicy Bypass .\install.ps1        # 安装全部插件（链接模式）
+# 只装管理器：.\install.ps1 dsh-repo-sync
+# 复制模式（不建链接）：.\install.ps1 -Copy
+```
+
+脚本会为每个插件创建 junction 链接到 `~/.dsh/profiles/web/node_modules/` 并自动写入 `cordis.patch.yml` 注册行（幂等）。完成后**重启 DSH**。
+
+之后打开会话头部「仓库」标签页（插件管理器），所有插件的安装/卸载/提交都在这里。
+
+## 安装插件（管理器一键安装）
 
 1. 打开 DSH 会话头部的「仓库」标签页（插件管理器）。
 2. 「仓库可安装」列表里点插件旁的 **安装**：
