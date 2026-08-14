@@ -21,13 +21,15 @@ dsh-plugins/
 powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins/master/install-remote.ps1 | iex"
 ```
 
-脚本自动：拉取插件源码到托管目录 `~\.dsh\plugins-src\` → 为每个插件创建 junction 链接到 `~/.dsh/profiles/web/node_modules/` → 写入 `cordis.patch.yml` 注册行（幂等）。完成后**重启 DSH**。
+脚本自动：拉取插件源码到托管目录 `~\.dsh\plugins-src\`（git clone，重跑自动 pull 更新）→ 为每个插件创建 junction 链接到 `~/.dsh/profiles/web/node_modules/` → 写入 `cordis.patch.yml` 注册行（幂等）。完成后**重启 DSH**。
 
-之后打开会话头部「仓库」标签页（插件管理器），所有插件的安装/卸载/提交都在这里。重跑上面命令可拉取插件最新版（git pull）。
+之后打开会话头部「仓库」标签页（插件管理器），所有插件的安装/卸载/提交都在这里。
+
+> **本机开发建议**：如果你自己有本地克隆（如 `D:\Documents\dsh-plugins`），直接用它跑
+> `powershell -ExecutionPolicy Bypass .\install.ps1`，链接会指向本地克隆——改代码刷新即生效。
+> 远程一条命令适合新机器/快速引导（会建 `~\.dsh\plugins-src` 托管副本，编辑要在那里改）。
 
 想指定插件或复制模式，远程脚本也透传参数：`... | iex` 后接 `dsh-repo-sync -Copy` 之类（用法与本地 `install.ps1` 相同）。
-
-也可克隆本仓库后用本地脚本：`powershell -ExecutionPolicy Bypass .\install.ps1`。
 
 ## 安装插件（管理器一键安装）
 
