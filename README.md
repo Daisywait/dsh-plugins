@@ -101,6 +101,7 @@ dsh-video 在 host 端通过 `ctx.tools` 注册两个模型可调用工具（无
 - Host 半区用 `node:child_process` 执行 git（web profile 未挂载 shell/subprocess 服务，不要用 `ctx.get('shell')`）。
 - 安装用 junction 链接（`fs.symlinkSync(..., 'junction')`），Node/浏览器按普通目录解析。
 - 客户端与 Host 通信：Host 注册 `webServer` HTTP 路由（如 `/repo-sync/plugins`），客户端用 `fetch` 轮询/调用；不要用动态插件的 `harness.handle`/`host.call`（常驻插件没有这两个内置）。
+- 常驻插件给模型加工具：`ctx.inject(['tools'], (toolsCtx) => toolsCtx.tools.register({ name, description, parameters, output: { schema, render }, execute }))` —— 直接注册 raw `ToolDefinition` 对象即可（`defineTool` 只是 TS 辅助），插件目录解析不到 `@deepseek-ai/*` 平台包，不要 import 它们。
 
 ## 贡献者
 

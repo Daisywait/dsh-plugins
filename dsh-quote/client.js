@@ -16,10 +16,7 @@ window.__ModuleLoader__.load({
 			".qt-dock{display:flex;flex-direction:column;gap:6px;width:100%;max-width:calc(var(--dsh-chat-content-width,748px) + 32px);margin:0 auto;padding:0 8px;box-sizing:border-box}" +
 			".qt-card{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:10px;padding:8px 12px;pointer-events:auto}" +
 			".qt-card-text{flex:1;min-width:0;max-height:120px;overflow-y:auto;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;user-select:text}" +
-			".qt-card-actions{flex:none;display:flex;gap:6px}" +
-			".qt-card-actions button{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer}" +
-			".qt-card-actions button:hover{background:var(--dsw-alias-interactive-bg-hover)}" +
-			".qt-card-actions button[data-tone=danger]{color:var(--dsw-alias-state-error-primary)}";
+			".qt-hint{font-size:11px;color:var(--dsw-alias-label-secondary);padding:0 2px}";
 
 		function apply(ctx) {
 			/* 待发引用卡片：不可编辑，用户自行决定何时发送 */
@@ -35,17 +32,6 @@ window.__ModuleLoader__.load({
 			const removeQuote = (id) => {
 				quoteStore.items = quoteStore.items.filter((q) => q.id !== id);
 				bumpQuotes();
-			};
-
-			/* 发送引用消息：先写草稿，等输入机器落地后再提交（避免提交到旧草稿被拒） */
-			const sendQuote = (actions, draft, text) => {
-				if (!actions || !text) return;
-				const block = "> " + text.replace(/\n/g, "\n> ");
-				const content = (draft.trim() === "" ? block : block + "\n\n" + draft) + "\n";
-				actions.setDraft(content);
-				setTimeout(() => {
-					try { actions.submit(); } catch (e) {}
-				}, 60);
 			};
 
 			/* 选区状态 */
@@ -82,31 +68,36 @@ window.__ModuleLoader__.load({
 				bumpSel();
 			};
 
-			/* 引用卡片坞：输入框上方，不可编辑；每张卡片可单独发送/删除 */
+			/* 引用卡片坞：输入框上方，不可编辑、无按钮；点击输入框时自动并入草稿一起发送 */
 			function QuoteDock(props) {
 				const [, force] = react.useState(0);
+				const draftRef = react.useRef("");
+				draftRef.current = (props.input && props.input.draft) || "";
 				react.useEffect(() => {
 					quoteStore.listeners.add(force);
-					return () => quoteStore.listeners.delete(force);
+					const onFocusIn = (e) => {
+						if (quoteStore.items.length === 0) return;
+						const t = e.target;
+						if (!t || t.tagName !== "TEXTAREA") return;
+						const parts = quoteStore.items.map((q) => "> " + q.text.replace(/\n/g, "\n> "));
+						const draft = draftRef.current || "";
+						const merged = (parts.join("\n\n") + "\n\n" + draft).replace(/\n{3,}/g, "\n\n");
+						props.inputActions.setDraft(merged);
+						quoteStore.items = [];
+						bumpQuotes();
+					};
+					document.addEventListener("focusin", onFocusIn);
+					return () => {
+						quoteStore.listeners.delete(force);
+						document.removeEventListener("focusin", onFocusIn);
+					};
 				}, []);
-				const draft = (props.input && props.input.draft) || "";
 				if (quoteStore.items.length === 0) return null;
 				return react.createElement("div", { className: "qt-dock" },
 					quoteStore.items.map((q) => react.createElement("div", { className: "qt-card", key: q.id },
-						react.createElement("div", { className: "qt-card-text" }, q.text),
-						react.createElement("div", { className: "qt-card-actions" },
-							react.createElement("button", {
-								onClick: () => {
-									sendQuote(props.inputActions, draft, q.text);
-									removeQuote(q.id);
-								}
-							}, "发送"),
-							react.createElement("button", {
-								"data-tone": "danger",
-								onClick: () => removeQuote(q.id)
-							}, "删除")
-						)
-					))
+						react.createElement("div", { className: "qt-card-text" }, q.text)
+					)),
+					react.createElement("div", { className: "qt-hint" }, "点击输入框后自动并入草稿一起发送")
 				);
 			}
 
