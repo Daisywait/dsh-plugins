@@ -204,6 +204,225 @@ function startRender(opts) {
   return job
 }
 
+// ---- 模型工具（智能体生成视频） ---------------------------------------------
+// 通过 ctx.tools 注册两个 ToolDefinition（raw 对象，无需引入 @deepseek-ai/dsh-tools）：
+//   video_render      渲染视频（默认等待完成；wait:false 时立即返回，配合 video_job_status 轮询）
+//   video_job_status  查询任务状态 / 输出地址
+// 默认参数与 remotion/src/props.ts 的 DEFAULT_PROPS 保持一致。
+
+const TOOL_DEFAULTS = {
+  title: '用 Remotion 做视频',
+  subtitle: '预览即最终画面，所见即所得',
+  byline: 'DSH 插件 · dsh-video',
+  emoji: '🎬',
+  bg1: '#0f0c29',
+  bg2: '#302b63',
+  accent: '#ffd166',
+  textColor: '#ffffff'
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const clampEven = (n, min, max) => {
+  let v = Math.round(Number(n) || 0)
+  if (v < min) v = min
+  if (v > max) v = max
+  return v % 2 === 0 ? v : v + 1
+}
+const strArg = (v, fallback) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : fallback)
+const pickEnum = (v, list, fallback) => (list.includes(v) ? v : fallback)
+
+const VIDEO_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    jobId: { type: 'string' },
+    status: {
+      type: 'string',
+      enum: ['queued', 'bundling', 'downloading-browser', 'preparing', 'rendering', 'done', 'error', 'cancelled']
+    },
+    progress: { type: 'number' },
+    outputUrl: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+    composition: { type: 'string' },
+    width: { type: 'integer' },
+    height: { type: 'integer' },
+    error: { oneOf: [{ type: 'string' }, { type: 'null' }] }
+  }
+}
+
+function jobToValue(job) {
+  const j = snapshotJob(job)
+  return {
+    jobId: j.id,
+    status: j.status,
+    progress: j.progress,
+    outputUrl: j.outputUrl,
+    composition: j.composition || '',
+    width: j.width || 1280,
+    height: j.height || 720,
+    error: j.error
+  }
+}
+
+const statusLabel = (s) => ({
+  queued: '排队中',
+  bundling: '打包合成代码',
+  'downloading-browser': '下载渲染内核（首次）',
+  preparing: '准备合成',
+  rendering: '渲染中',
+  done: '完成',
+  error: '失败',
+  cancelled: '已取消'
+})[s] || s
+
+function registerVideoTools(toolsCtx) {
+  toolsCtx.tools.register({
+    name: 'video_render',
+    description: [
+      '用 Remotion 在 DSH 宿主进程渲染一段视频并输出 H.264 MP4。',
+      '两种内置合成：kind="Title" 标题卡（大字标题+副标题+署名，渐变动画背景）与 kind="End" 结束卡（谢谢观看）。',
+      '所有文案与配色均可自定义；时长 seconds∈{5,10,15,20}，帧率 fps∈{24,30,60}，分辨率默认 1280×720（width/height 可改为 854×480、1920×1080 等偶数）。',
+      '默认等待渲染完成（wait=true）并返回最终结果；渲染较慢（数秒到数分钟，取决于时长/分辨率/首次打包），返回 status="done" 时 outputUrl 为可下载播放的成品地址。',
+      '若 wait=false 则立即返回任务信息，用 video_job_status 轮询直至 status 为 done/error/cancelled。',
+      '渲染期间用户可在 DSH「视频」标签页看到任务进度与成品。完成后请在回复中把 outputUrl 作为链接提供给用户。'
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['Title', 'End'], description: '合成类型：Title 标题卡 / End 结束卡', default: 'Title' },
+        seconds: { type: 'integer', enum: [5, 10, 15, 20], description: '视频时长（秒）', default: 5 },
+        fps: { type: 'integer', enum: [24, 30, 60], description: '帧率', default: 30 },
+        width: { type: 'integer', description: '输出宽度（偶数，默认 1280）', default: 1280 },
+        height: { type: 'integer', description: '输出高度（偶数，默认 720）', default: 720 },
+        title: { type: 'string', description: '标题文字', default: '用 Remotion 做视频' },
+        subtitle: { type: 'string', description: '副标题', default: '预览即最终画面，所见即所得' },
+        byline: { type: 'string', description: '署名/页脚', default: 'DSH 插件 · dsh-video' },
+        emoji: { type: 'string', description: 'Emoji 图标', default: '🎬' },
+        bg1: { type: 'string', description: '背景主色（CSS 颜色）', default: '#0f0c29' },
+        bg2: { type: 'string', description: '背景辅色（CSS 颜色）', default: '#302b63' },
+        accent: { type: 'string', description: '强调色（CSS 颜色）', default: '#ffd166' },
+        textColor: { type: 'string', description: '文字颜色（CSS 颜色）', default: '#ffffff' },
+        wait: { type: 'boolean', description: '是否等待渲染完成，默认 true', default: true }
+      },
+      additionalProperties: false
+    },
+    output: {
+      schema: VIDEO_OUTPUT_SCHEMA,
+      render: (_args, value) => {
+        if (value.status === 'done') {
+          return [{
+            type: 'text',
+            text: `视频渲染完成 ✓ ${value.composition}（${value.width}×${value.height}）\n播放/下载：${value.outputUrl}`
+          }]
+        }
+        if (value.status === 'error') {
+          return [{ type: 'text', text: `视频渲染失败：${value.error || '未知错误'}（任务 ${value.jobId}）` }]
+        }
+        return [{
+          type: 'text',
+          text: `视频渲染任务 ${value.jobId} 状态：${statusLabel(value.status)}（${Math.round(value.progress * 100)}%）。可用 video_job_status 查询最新状态。`
+        }]
+      }
+    },
+    execute: async (args, exec) => {
+      if (exec.signal && exec.signal.aborted) {
+        return { jobId: '', status: 'cancelled', progress: 0, outputUrl: null, composition: '', width: 0, height: 0, error: '已取消' }
+      }
+      const kind = pickEnum(args && args.kind, ['Title', 'End'], 'Title')
+      const seconds = pickEnum(args && args.seconds, [5, 10, 15, 20], 5)
+      const fps = pickEnum(args && args.fps, [24, 30, 60], 30)
+      const width = clampEven(args && args.width, 160, 3840) || 1280
+      const height = clampEven(args && args.height, 90, 2160) || 720
+      const props = {
+        title: strArg(args && args.title, TOOL_DEFAULTS.title),
+        subtitle: strArg(args && args.subtitle, TOOL_DEFAULTS.subtitle),
+        byline: strArg(args && args.byline, TOOL_DEFAULTS.byline),
+        emoji: strArg(args && args.emoji, TOOL_DEFAULTS.emoji),
+        bg1: strArg(args && args.bg1, TOOL_DEFAULTS.bg1),
+        bg2: strArg(args && args.bg2, TOOL_DEFAULTS.bg2),
+        accent: strArg(args && args.accent, TOOL_DEFAULTS.accent),
+        textColor: strArg(args && args.textColor, TOOL_DEFAULTS.textColor)
+      }
+      const composition = kind + '-' + seconds + 's-' + fps + 'fps'
+      const job = startRender({ composition, props, width, height })
+      const onAbort = () => {
+        job.cancelled = true
+        if (job.cancelFn) { try { job.cancelFn() } catch (e) {} }
+      }
+      if (exec.signal) exec.signal.addEventListener('abort', onAbort)
+      try {
+        if (args && args.wait === false) return jobToValue(job)
+        // 等待到终态；信号中断则取消渲染
+        for (;;) {
+          const st = snapshotJob(job).status
+          if (st === 'done' || st === 'error' || st === 'cancelled') return jobToValue(job)
+          if (exec.signal && exec.signal.aborted) {
+            onAbort()
+            return jobToValue(job)
+          }
+          await sleep(900)
+        }
+      } finally {
+        if (exec.signal) exec.signal.removeEventListener('abort', onAbort)
+      }
+    },
+    presentCall: (args) => ({
+      card: 'generic',
+      title: '渲染视频（Remotion）',
+      kind: 'execute',
+      rawInput: {
+        kind: args && args.kind,
+        seconds: args && args.seconds,
+        fps: args && args.fps,
+        title: args && args.title
+      }
+    })
+  })
+
+  toolsCtx.tools.register({
+    name: 'video_job_status',
+    description: '查询 dsh-video 渲染任务（video_render 启动）的最新状态：排队/打包/渲染/完成/失败，完成后返回 outputUrl 成品地址。',
+    parameters: {
+      type: 'object',
+      properties: {
+        jobId: { type: 'string', description: 'video_render 返回的 jobId' }
+      },
+      required: ['jobId'],
+      additionalProperties: false
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean' },
+          job: VIDEO_OUTPUT_SCHEMA,
+          error: { oneOf: [{ type: 'string' }, { type: 'null' }] }
+        }
+      },
+      render: (_args, value) => {
+        if (!value.ok || !value.job) return [{ type: 'text', text: '任务不存在：' + (value.error || '') }]
+        const j = value.job
+        if (j.status === 'done') {
+          return [{ type: 'text', text: `任务 ${j.jobId} 已完成 ✓ 播放/下载：${j.outputUrl}` }]
+        }
+        return [{ type: 'text', text: `任务 ${j.jobId} 状态：${statusLabel(j.status)}（${Math.round(j.progress * 100)}%）` }]
+      }
+    },
+    execute: async (args) => {
+      const id = strArg(args && args.jobId, '')
+      const job = jobs.get(id)
+      if (!job) return { ok: false, job: null, error: '任务不存在' }
+      return { ok: true, job: jobToValue(job), error: null }
+    },
+    presentCall: (args) => ({
+      card: 'generic',
+      title: '查询视频渲染任务',
+      kind: 'read',
+      rawInput: { jobId: args && args.jobId }
+    })
+  })
+}
+
 // ---- HTTP 路由 ------------------------------------------------------------
 
 const MIME = {
@@ -224,6 +443,15 @@ const MIME = {
 }
 
 function apply(ctx) {
+  // 模型工具：让智能体可以直接生成视频（渲染服务就绪后注册）
+  ctx.inject(['tools'], (toolsCtx) => {
+    try {
+      registerVideoTools(toolsCtx)
+    } catch (e) {
+      // 注册失败不拖垮插件（标签页/HTTP 仍可用），把错误暴露到状态里
+      state.lastError = '工具注册失败: ' + String((e && e.message) || e)
+    }
+  })
   ctx.inject(['webServer'], (httpCtx) => {
     const json = (res, obj, status = 200) => {
       res.writeHead(status, {

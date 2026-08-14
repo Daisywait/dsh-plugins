@@ -22,6 +22,17 @@ window.__ModuleLoader__.load({
 				return () => { if (quoteHub.handler === fn) quoteHub.handler = null; };
 			};
 
+			/* 发送引用消息：先写草稿，等输入机器落地后再提交（避免提交到旧草稿被拒） */
+			const sendQuote = (actions, draft, text) => {
+				if (!actions || !text) return;
+				const block = "> " + text.replace(/\n/g, "\n> ");
+				const content = (draft.trim() === "" ? block : block + "\n\n" + draft) + "\n";
+				actions.setDraft(content);
+				setTimeout(() => {
+					try { actions.submit(); } catch (e) {}
+				}, 60);
+			};
+
 			/* 选区状态 */
 			const selStore = { text: "", rect: null, visible: false, listeners: new Set() };
 			const bumpSel = () => selStore.listeners.forEach((fn) => fn((x) => (x || 0) + 1));
@@ -61,11 +72,7 @@ window.__ModuleLoader__.load({
 				const draftRef = react.useRef("");
 				draftRef.current = (props.input && props.input.draft) || "";
 				react.useEffect(() => registerQuote((text) => {
-					const d = draftRef.current || "";
-					const block = "> " + text.replace(/\n/g, "\n> ");
-					const content = d.trim() === "" ? block : block + "\n\n" + d;
-					props.inputActions.setDraft(content + "\n");
-					props.inputActions.submit();
+					sendQuote(props.inputActions, draftRef.current || "", text);
 				}), []);
 				return null;
 			}
@@ -96,11 +103,7 @@ window.__ModuleLoader__.load({
 					const text = selectedRef.current || messageText;
 					selectedRef.current = null;
 					if (!text) return;
-					const d = draft || "";
-					const block = "> " + text.replace(/\n/g, "\n> ");
-					const content = d.trim() === "" ? block : block + "\n\n" + d;
-					props.inputActions.setDraft(content + "\n");
-					props.inputActions.submit();
+					sendQuote(props.inputActions, draft || "", text);
 				};
 
 				return react.createElement("button", {
