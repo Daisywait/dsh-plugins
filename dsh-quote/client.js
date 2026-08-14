@@ -8,14 +8,60 @@ window.__ModuleLoader__.load({
 
 		const CSS =
 			".qt-btn{width:28px;height:28px;border:none;background:none;border-radius:8px;color:var(--dsw-alias-label-secondary);cursor:pointer;display:grid;place-items:center;font-size:13px}" +
-			".qt-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}";
+			".qt-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}" +
+			".qt-bar{position:fixed;z-index:40;display:flex;align-items:center;gap:4px;padding:4px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-overlay);border-radius:10px;box-shadow:var(--dsw-shadow-lv2);pointer-events:auto}" +
+			".qt-bar button{border:none;background:none;border-radius:7px;color:var(--dsw-alias-label-primary);cursor:pointer;padding:5px 10px;font-size:12px;display:inline-flex;align-items:center;gap:4px}" +
+			".qt-bar button:hover{background:var(--dsw-alias-interactive-bg-hover)}" +
+			".qt-bar button:active{transform:translateY(1px)}";
 
 		function apply(ctx) {
-			/* 助手消息操作区：「引用」把该消息文本带进输入框 */
-			/* 助手消息操作区：「引用」把当前选中的文本（无选中则整条消息）带进输入框 */
+			/* 共享枢纽：会话侧注册“引用写入”能力（有 inputActions），浮出工具条调用它 */
+			const quoteHub = { handler: null };
+			const registerQuote = (fn) => {
+				quoteHub.handler = fn;
+				return () => { if (quoteHub.handler === fn) quoteHub.handler = null; };
+			};
+
+			/* 选区状态：文本 + 定位矩形 */
+			const selStore = { text: "", rect: null, visible: false, listeners: new Set() };
+			const bumpSel = () => selStore.listeners.forEach((fn) => fn((x) => (x || 0) + 1));
+
+			const inEditable = (node) => {
+				if (!node) return false;
+				const el = node.nodeType === 3 ? node.parentElement : node;
+				return !!(el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable));
+			};
+
+			const scanSelection = () => {
+				try {
+					const sel = window.getSelection();
+					const text = sel && !sel.isCollapsed ? sel.toString().trim() : "";
+					let rect = null;
+					if (text && sel.rangeCount > 0 && !inEditable(sel.anchorNode) && !inEditable(sel.focusNode)) {
+						const r = sel.getRangeAt(0).getBoundingClientRect();
+						if (r.width > 0 || r.height > 0) {
+							rect = { left: r.left, top: r.top, width: r.width, bottom: r.bottom };
+						}
+					}
+					selStore.text = text;
+					selStore.rect = rect;
+					selStore.visible = !!(text && rect && quoteHub.handler);
+					bumpSel();
+				} catch (e) {}
+			};
+
+			const hideSel = () => {
+				selStore.visible = false;
+				try { window.getSelection().removeAllRanges(); } catch (e) {}
+				bumpSel();
+			};
+
+			/* 助手消息操作区 ⤴：引用当前选中文本（无选中则整条消息） */
 			function QuoteAction(props) {
 				const messageId = props.messageId;
 				const draft = props.useInput((s) => s.draft);
+				const draftRef = react.useRef("");
+				draftRef.current = draft;
 				const messageText = props.useSession((s) => {
 					const n = s.nodes.find((x) => x.kind === "assistant" && x.messageId === messageId);
 					if (!n || n.kind !== "assistant") return null;
@@ -24,7 +70,13 @@ window.__ModuleLoader__.load({
 				}, (a, b) => a === b);
 				const selectedRef = react.useRef(null);
 
-				/* 在 mousedown 时先捕获选区（按钮点击可能清除选区） */
+				react.useEffect(() => quoteHub.register((text) => {
+					const d = draftRef.current || "";
+					const block = "> " + text.replace(/\n/g, "\n> ");
+					const sep = d.trim() === "" ? "" : "\n\n";
+					props.inputActions.setDraft(d + sep + block + "\n");
+				}), []);
+
 				const grabSelection = () => {
 					try {
 						const sel = window.getSelection();
@@ -38,10 +90,11 @@ window.__ModuleLoader__.load({
 				const quote = () => {
 					const text = selectedRef.current || messageText;
 					selectedRef.current = null;
-					if (!text || !props.inputActions) return;
+					if (!text) return;
+					const d = draftRef.current || "";
 					const block = "> " + text.replace(/\n/g, "\n> ");
-					const sep = draft.trim() === "" ? "" : "\n\n";
-					props.inputActions.setDraft(draft + sep + block + "\n");
+					const sep = d.trim() === "" ? "" : "\n\n";
+					props.inputActions.setDraft(d + sep + block + "\n");
 				};
 
 				return react.createElement("button", {
@@ -55,24 +108,74 @@ window.__ModuleLoader__.load({
 				);
 			}
 
+			/* 选区浮出工具条（overlay，全局）：⤴ 引用 / 复制 */
+			function QuoteToolbar(props) {
+				const [, force] = react.useState(0);
+				react.useEffect(() => {
+					selStore.listeners.add(force);
+					document.addEventListener("selectionchange", scanSelection);
+					document.addEventListener("mouseup", scanSelection);
+					window.addEventListener("scroll", hideSel, true);
+					window.addEventListener("resize", hideSel);
+					return () => {
+						selStore.listeners.delete(force);
+						document.removeEventListener("selectionchange", scanSelection);
+						document.removeEventListener("mouseup", scanSelection);
+						window.removeEventListener("scroll", hideSel, true);
+						window.removeEventListener("resize", hideSel);
+					};
+				}, []);
+
+				const doQuote = () => {
+					const text = selStore.text;
+					hideSel();
+					if (text && quoteHub.handler) quoteHub.handler(text);
+				};
+				const doCopy = () => {
+					const text = selStore.text;
+					hideSel();
+					try { navigator.clipboard.writeText(text); } catch (e) {}
+				};
+
+				let bar = null;
+				if (selStore.visible && selStore.rect) {
+					const r = selStore.rect;
+					const barW = 150;
+					const barH = 34;
+					const left = Math.min(Math.max(r.left + r.width / 2 - barW / 2, 8), Math.max(8, window.innerWidth - barW - 8));
+					const top = Math.max(8, r.top - barH - 8);
+					bar = react.createElement("div", {
+						className: "qt-bar",
+						style: { left: left + "px", top: top + "px" }
+					},
+						react.createElement("button", { onClick: doQuote }, "⤴ 引用"),
+						react.createElement("button", { onClick: doCopy }, "复制")
+					);
+				}
+				return react.createElement(react.Fragment, null,
+					react.createElement("style", null, CSS),
+					bar
+				);
+			}
+
 			ctx.effect(() => {
 				const slots = ctx.get("slots");
-				let dAction, dStyle;
+				let dAction, dToolbar;
 				if (slots !== undefined) {
 					dAction = slots.inject("conversation.chat.assistant-actions", () => slots.register(
 						{ name: "conversation.chat.assistant-actions", id: "quote", order: 20 },
 						(props) => react.createElement(QuoteAction, props)
 					));
-					dStyle = slots.inject("shell.overlay", () => slots.register(
-						{ name: "shell.overlay", id: "quote-style", order: 5 },
-						(props) => react.createElement("style", null, CSS)
+					dToolbar = slots.inject("shell.overlay", () => slots.register(
+						{ name: "shell.overlay", id: "quote-toolbar", order: 5 },
+						(props) => react.createElement(QuoteToolbar, {})
 					));
 				}
 				return () => {
 					if (dAction) { try { dAction(); } catch (e) {} }
-					if (dStyle) { try { dStyle(); } catch (e) {} }
+					if (dToolbar) { try { dToolbar(); } catch (e) {} }
 				};
-			}, "dsh-quote: quote action");
+			}, "dsh-quote: selection toolbar + quote action");
 		}
 
 		exports.apply = apply;
