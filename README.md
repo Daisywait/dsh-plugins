@@ -10,7 +10,7 @@
 dsh-plugins/
 ├── dsh-skin-shiguangdailiren/   # 《时光代理人》皮肤：壁纸 + 暖粉毛玻璃主题 + GenUI 网页质感
 ├── dsh-repo-sync/               # 插件管理器：「仓库」标签页，一键安装/卸载/提交
-├── dsh-quote/                   # 消息「引用」：助手消息操作区 ⤴ 把消息带进输入框
+├── dsh-quote/                   # 消息「引用」：选中文本引用（开发中，暂未收录到远端）
 ├── dsh-video/                   # 视频工作室：Remotion 实时预览 + 参数交互 + 渲染 MP4（新「视频」标签页）
 └── README.md
 ```

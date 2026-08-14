@@ -8,6 +8,7 @@ export interface VideoProps {
 	bg2: string;
 	accent: string;
 	textColor: string;
+	install: string;
 }
 
 export const DEFAULT_PROPS: VideoProps = {
@@ -19,6 +20,7 @@ export const DEFAULT_PROPS: VideoProps = {
 	bg2: '#302b63',
 	accent: '#ffd166',
 	textColor: '#ffffff',
+	install: '仓库标签页 → 一键安装 → 重启 DSH',
 };
 
 // 注册的时长（秒）× 帧率组合，共同构成 composition id

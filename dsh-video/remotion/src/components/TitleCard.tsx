@@ -80,6 +80,7 @@ export const TitleCard: React.FC<VideoProps> = (props) => {
 	const titleIn = useSpringIn(0.95, { damping: 16 });
 	const subIn = useFade(1.35, 0.4);
 	const bylineIn = useFade(1.8, 0.4);
+	const installIn = useFade(2.2, 0.5);
 	const titleDrift = interpolate(frame, [0, durationInFrames], [0, -6], {
 		extrapolateRight: 'clamp',
 	});
