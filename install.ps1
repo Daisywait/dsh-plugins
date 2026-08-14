@@ -1,32 +1,28 @@
-﻿# dsh-plugins 引导安装脚本
-# 用法（从仓库克隆目录运行）：
-#   powershell -ExecutionPolicy Bypass .\install.ps1              # 安装仓库里全部插件
+﻿# dsh-plugins 引导安装脚本（官方 pnpm 方式）
+# 用法：
+#   powershell -ExecutionPolicy Bypass .\install.ps1               # 安装仓库里全部插件
 #   powershell -ExecutionPolicy Bypass .\install.ps1 dsh-repo-sync # 只装一个
-#   powershell -ExecutionPolicy Bypass .\install.ps1 dsh-repo-sync -Copy  # 复制模式（默认链接）
-#
-# 远程一键（无需克隆，自动拉取到 ~\.dsh\plugins-src）：
+# 远程一键（无需克隆）：
 #   powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins/master/install-remote.ps1 | iex"
-#
-# 作用：为每个插件创建 junction 链接（或复制）到 DSH profile 的 node_modules，
+# 作用：用 pnpm add link: 按官方方式把插件装进 DSH web profile（记录进 package.json），
 # 并自动把注册行写入 cordis.patch.yml（幂等）。完成后重启 DSH 生效。
-# 之后日常安装/卸载交给「仓库」标签页的插件管理器。
 
 param(
-  [string[]]$Names = @(),
-  [switch]$Copy
+  [string[]]$Names = @()
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
-$profileRoot = Join-Path $env:USERPROFILE '.dsh\profiles\web'
-$nodeModules = Join-Path $profileRoot 'node_modules'
-$yml = Join-Path $profileRoot 'cordis.patch.yml'
+$profile = Join-Path $env:USERPROFILE '.dsh\profiles\web'
+$nodeModules = Join-Path $profile 'node_modules'
+$yml = Join-Path $profile 'cordis.patch.yml'
 
-if (-not (Test-Path $profileRoot)) {
-  Write-Host "未找到 DSH web profile：$profileRoot" -ForegroundColor Red
+if (-not (Test-Path $profile)) {
+  Write-Host "未找到 DSH web profile：$profile" -ForegroundColor Red
   exit 1
 }
 New-Item -ItemType Directory -Path $nodeModules -Force | Out-Null
+if (-not (Test-Path $yml)) { [System.IO.File]::WriteAllText($yml, '# dsh profile patch layer`n[]', (New-Object System.Text.UTF8Encoding($false))) }
 
 if ($Names.Count -eq 0) {
   $Names = Get-ChildItem $repo -Directory |
@@ -34,42 +30,34 @@ if ($Names.Count -eq 0) {
     ForEach-Object { $_.Name }
 }
 
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-$ymlContent = ''
-if (Test-Path $yml) { $ymlContent = [System.IO.File]::ReadAllText($yml) }
-$ymlDirty = $false
-
 foreach ($n in $Names) {
   $src = Join-Path $repo $n
   if (-not (Test-Path (Join-Path $src 'package.json'))) {
-    Write-Host "跳过 $n（仓库里没有该插件包）" -ForegroundColor DarkGray
+    Write-Host "跳过 $n（不是插件包）" -ForegroundColor DarkGray
     continue
   }
   $target = Join-Path $nodeModules $n
   if (Test-Path $target) { Remove-Item $target -Recurse -Force }
-  if ($Copy) {
-    Copy-Item $src $target -Recurse -Force
-    Write-Host "[已安装] $n（复制模式）" -ForegroundColor Green
-  } else {
-    New-Item -ItemType Junction -Path $target -Target $src | Out-Null
-    Write-Host "[已安装] $n（链接模式 → $src）" -ForegroundColor Green
+  Write-Host "[安装] $n（pnpm add link:...）" -ForegroundColor Green
+  pnpm --dir $profile add "link:$($src -replace '\\','/')" 2>&1 | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "    pnpm 安装失败，退出码 $LASTEXITCODE" -ForegroundColor Red
+    continue
   }
-  if ($ymlContent -match "name: '$n'") {
-    Write-Host "        注册行已存在，跳过" -ForegroundColor DarkGray
+  Write-Host "    pnpm 安装成功" -ForegroundColor Green
+  $content = [System.IO.File]::ReadAllText($yml)
+  if ($content -match "name: '$n'") {
+    Write-Host "    注册行已存在，跳过" -ForegroundColor DarkGray
   } else {
     $row = "    - id: $n`n      name: '$n'"
-    if ($ymlContent -match '- insert:') {
-      $ymlContent = $ymlContent -replace '- insert:', "- insert:`n$row"
+    if ($content -match '- insert:') {
+      $content = $content -replace '- insert:', "- insert:`n$row"
     } else {
-      $ymlContent = $ymlContent.TrimEnd() + "`n- insert:`n$row`n"
+      $content = $content.TrimEnd() + "`n- insert:`n$row`n"
     }
-    $ymlDirty = $true
-    Write-Host "        已写入注册行 cordis.patch.yml" -ForegroundColor Green
+    [System.IO.File]::WriteAllText($yml, $content, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "    已写入注册行 cordis.patch.yml" -ForegroundColor Green
   }
-}
-
-if ($ymlDirty) {
-  [System.IO.File]::WriteAllText($yml, $ymlContent, $utf8NoBom)
 }
 
 Write-Host ''

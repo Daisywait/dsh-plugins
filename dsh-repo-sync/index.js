@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile)
 
 const PLUGINS_REPO = 'D:\\Documents\\dsh-plugins'
 const PLUGIN_ROOT = join(process.env.USERPROFILE || 'C:\\Users\\waitw', '.dsh', 'profiles', 'web', 'node_modules')
+const PROFILE_DIR = join(process.env.USERPROFILE || 'C:\\Users\\waitw', '.dsh', 'profiles', 'web')
 const YML_PATH = join(dirname(PLUGIN_ROOT), 'cordis.patch.yml')
 
 const state = {
@@ -25,6 +26,24 @@ async function git(args, timeoutMs) {
       cwd: PLUGINS_REPO,
       timeout: timeoutMs || 60000,
       maxBuffer: 4 * 1024 * 1024,
+      windowsHide: true
+    })
+    return { code: 0, out: String(stdout || ''), err: String(stderr || '') }
+  } catch (e) {
+    return {
+      code: typeof e.code === 'number' ? e.code : -1,
+      out: String(e.stdout || ''),
+      err: String(e.stderr || e.message || e)
+    }
+  }
+}
+
+async function pnpm(args, timeoutMs) {
+  try {
+    const { stdout, stderr } = await execFileAsync('pnpm', args, {
+      cwd: PROFILE_DIR,
+      timeout: timeoutMs || 120000,
+      maxBuffer: 8 * 1024 * 1024,
       windowsHide: true
     })
     return { code: 0, out: String(stdout || ''), err: String(stderr || '') }
@@ -161,45 +180,22 @@ function removeYmlRow(name) {
   } catch (e) { return false }
 }
 
-/** 安装：junction 链接到插件仓库 + 自动注册。 */
+/** 安装（官方方式）：pnpm add link:<仓库目录> + 自动注册。 */
 async function installPlugin(name) {
   const repo = listRepo().find((p) => p.name === name)
   if (!repo) return { ok: false, message: '插件仓库里没有 ' + name }
-  const target = join(PLUGIN_ROOT, name)
-  if (existsSync(target)) {
-    try {
-      if (lstatSync(target).isSymbolicLink()) {
-        return { ok: true, message: '已是链接模式安装', installed: true, registered: true }
-      }
-      rmSync(target, { recursive: true, force: true })
-    } catch (e) {
-      return { ok: false, message: '清理旧安装失败: ' + String(e.message || e).slice(0, 200) }
-    }
-  }
-  try {
-    symlinkSync(repo.dir, target, 'junction')
-  } catch (e) {
-    return { ok: false, message: '创建链接失败: ' + String(e.message || e).slice(0, 200) }
-  }
+  const r = await pnpm(['add', 'link:' + repo.dir.replace(/\\/g, '/')], 180000)
+  if (r.code !== 0) return { ok: false, message: 'pnpm 安装失败: ' + (r.err || r.out).trim().slice(0, 300) }
   const reg = ensureYmlRow(name)
   return { ok: true, message: (reg.registered ? '已安装并注册（重启生效）' : '已安装（已注册过）'), installed: true, registered: reg.registered }
 }
 
-/** 卸载：移除链接/目录 + 移除注册行。 */
+/** 卸载（官方方式）：pnpm remove + 移除注册行。 */
 async function uninstallPlugin(name) {
-  const target = join(PLUGIN_ROOT, name)
-  let removed = false
-  if (existsSync(target)) {
-    try {
-      if (lstatSync(target).isSymbolicLink()) unlinkSync(target)
-      else rmSync(target, { recursive: true, force: true })
-      removed = true
-    } catch (e) {
-      return { ok: false, message: '移除失败: ' + String(e.message || e).slice(0, 200) }
-    }
-  }
+  const r = await pnpm(['remove', name], 120000)
   const ymlRemoved = removeYmlRow(name)
-  return { ok: true, message: (removed ? '已卸载' : '未找到安装') + (ymlRemoved ? '，注册行已移除（重启生效）' : ''), removed, ymlRemoved }
+  const removed = r.code === 0
+  return { ok: true, message: (removed ? '已卸载' : '未找到安装（pnpm 退出码 ' + r.code + '）') + (ymlRemoved ? '，注册行已移除（重启生效）' : ''), removed, ymlRemoved }
 }
 
 /** 同步/提交插件到仓库（链接模式跳过复制，直接 git）。 */

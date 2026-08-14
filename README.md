@@ -1,6 +1,6 @@
 # dsh-plugins · 我的 DSH 插件仓库
 
-持续开发的 DeepSeek Harness (DSH) Web 插件源码仓库。每个插件一个文件夹；配合内置的「插件管理器」（`dsh-repo-sync`）可一键安装/卸载/提交，安装采用 **junction 符号链接**模式——源码即本仓库，改代码刷新即生效，无需复制。
+持续开发的 DeepSeek Harness (DSH) Web 插件源码仓库。每个插件一个文件夹；配合内置的「插件管理器」（`dsh-repo-sync`）可一键安装/卸载/提交。安装采用**官方 pnpm 方式**（`pnpm add link:...`，等价 `dsh plugin --profile web add`），记录进 profile 的 package.json，源码即本仓库，改代码刷新即生效。
 
 远端：`https://github.com/Daisywait/dsh-plugins`（公开）
 
@@ -10,6 +10,7 @@
 dsh-plugins/
 ├── dsh-skin-shiguangdailiren/   # 《时光代理人》皮肤：壁纸 + 暖粉毛玻璃主题 + GenUI 网页质感
 ├── dsh-repo-sync/               # 插件管理器：「仓库」标签页，一键安装/卸载/提交
+├── dsh-quote/                   # 消息「引用」：助手消息操作区 ⤴ 把消息带进输入框
 └── README.md
 ```
 
@@ -21,7 +22,7 @@ dsh-plugins/
 powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins/master/install-remote.ps1 | iex"
 ```
 
-脚本自动：拉取插件源码到托管目录 `~\.dsh\plugins-src\`（git clone，重跑自动 pull 更新）→ 为每个插件创建 junction 链接到 `~/.dsh/profiles/web/node_modules/` → 写入 `cordis.patch.yml` 注册行（幂等）。完成后**重启 DSH**。
+脚本自动：拉取插件源码到托管目录 `~\.dsh\plugins-src\`（git clone，重跑自动 pull 更新）→ 用 `pnpm add link:` 按官方方式安装到 profile（记录进 package.json）→ 写入 `cordis.patch.yml` 注册行（幂等）。完成后**重启 DSH**。
 
 之后打开会话头部「仓库」标签页（插件管理器），所有插件的安装/卸载/提交都在这里。
 
@@ -35,7 +36,7 @@ powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins
 
 1. 打开 DSH 会话头部的「仓库」标签页（插件管理器）。
 2. 「仓库可安装」列表里点插件旁的 **安装**：
-   - 自动创建 junction 链接 `~/.dsh/profiles/web/node_modules/<name>` → 本仓库 `<name>`
+   - 用官方方式 `pnpm add link:<仓库目录>` 安装（记录进 profile 的 package.json）
    - 自动写入 `cordis.patch.yml` 注册行（幂等，不会重复）
 3. 重启 DSH 生效。
 
@@ -63,7 +64,8 @@ powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins
 | 插件 | 功能 |
 |---|---|
 | dsh-skin-shiguangdailiren | 时光代理人壁纸 + 毛玻璃主题（明暗双套）；会话头部 🖌 打开右侧栏调节：透明度/水平位置/图片大小/GenUI 浓度/上传壁纸，全部自动保存；GenUI 卡片网页质感样式 |
-| dsh-repo-sync | 插件管理器：「仓库」标签页。已安装插件（状态 + 提交/同步 + 卸载）+ 仓库可安装（安装）。安装自动 junction + 注册；提交自动 git add + commit + push |
+| dsh-repo-sync | 插件管理器：「仓库」标签页。已安装插件（状态 + 提交/同步 + 卸载）+ 仓库可安装（安装，官方 pnpm 方式）。提交自动 git add + commit + push |
+| dsh-quote | 消息引用：助手消息操作区 ⤴ 按钮，把该消息文本带进输入框（方便引用上下文） |
 
 ## 开发流程
 
