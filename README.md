@@ -106,4 +106,4 @@ dsh-video 在 host 端通过 `ctx.tools` 注册两个模型可调用工具（无
 ## 贡献者
 
 - Daisywait（仓库作者，方向与使用）
-- deepseek-v4-flash（AI 开发助手：皮肤插件、插件管理器、引导脚本与文档的实现）
+- DeepSeek（deepseek-ai）：AI 开发助手，实现皮肤插件、插件管理器、引导脚本与文档
