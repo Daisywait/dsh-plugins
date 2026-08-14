@@ -56,15 +56,16 @@ window.__ModuleLoader__.load({
 				bumpSel();
 			};
 
-			/* 常驻引用写入器：dock 占位，只要有会话就可用（不依赖悬停消息） */
+			/* 常驻引用发送器：dock 占位，只要有会话就可用；点引用 = 立即发送一条引用消息泡 */
 			function QuoteHub(props) {
 				const draftRef = react.useRef("");
 				draftRef.current = (props.input && props.input.draft) || "";
 				react.useEffect(() => registerQuote((text) => {
 					const d = draftRef.current || "";
 					const block = "> " + text.replace(/\n/g, "\n> ");
-					const sep = d.trim() === "" ? "" : "\n\n";
-					props.inputActions.setDraft(d + sep + block + "\n");
+					const content = d.trim() === "" ? block : block + "\n\n" + d;
+					props.inputActions.setDraft(content + "\n");
+					props.inputActions.submit();
 				}), []);
 				return null;
 			}
@@ -97,14 +98,15 @@ window.__ModuleLoader__.load({
 					if (!text) return;
 					const d = draft || "";
 					const block = "> " + text.replace(/\n/g, "\n> ");
-					const sep = d.trim() === "" ? "" : "\n\n";
-					props.inputActions.setDraft(d + sep + block + "\n");
+					const content = d.trim() === "" ? block : block + "\n\n" + d;
+					props.inputActions.setDraft(content + "\n");
+					props.inputActions.submit();
 				};
 
 				return react.createElement("button", {
 					className: "qt-btn",
-					title: "引用选中文本到输入框",
-					"aria-label": "引用选中文本到输入框",
+					title: "以引用回复（发送引用消息）",
+					"aria-label": "以引用回复（发送引用消息）",
 					onMouseDown: grabSelection,
 					onClick: quote
 				},
