@@ -85,11 +85,11 @@ window.__ModuleLoader__.load({
 									return react.createElement("div", { className: "rps-plug", key: p.name },
 										react.createElement("span", { className: "rps-plug-name" }, p.name),
 										react.createElement("span", { className: "rps-plug-state", "data-st": st }, label),
-										p.linked ? null : react.createElement("button", {
+										react.createElement("button", {
 											className: "rps-plug-btn",
 											disabled: busy,
-											onClick: () => act("/repo-sync/push-plugin", p.name, "同步")
-										}, "同步"),
+											onClick: () => act("/repo-sync/push-plugin", p.name, p.linked ? "提交" : "同步")
+										}, p.linked ? "提交" : "同步"),
 										react.createElement("button", {
 											className: "rps-plug-btn",
 											"data-tone": "danger",

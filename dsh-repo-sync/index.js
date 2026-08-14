@@ -202,17 +202,18 @@ async function uninstallPlugin(name) {
   return { ok: true, message: (removed ? '已卸载' : '未找到安装') + (ymlRemoved ? '，注册行已移除（重启生效）' : ''), removed, ymlRemoved }
 }
 
-/** 同步（复制模式）/ 链接模式下无意义。 */
+/** 同步/提交插件到仓库（链接模式跳过复制，直接 git）。 */
 async function pushPlugin(name) {
   const found = listInstalled().find((p) => p.name === name)
   if (!found) return { ok: false, message: '未找到插件 ' + name }
-  if (found.linked) return { ok: true, message: '链接模式：源码即仓库，无需同步', pushed: false }
+  const repoDir = join(PLUGINS_REPO, name)
   if (!existsSync(PLUGINS_REPO)) return { ok: false, message: '插件仓库不存在: ' + PLUGINS_REPO }
-  const dest = join(PLUGINS_REPO, name)
-  try {
-    cpSync(found.dir, dest, { recursive: true, force: true })
-  } catch (e) {
-    return { ok: false, message: '复制失败: ' + String(e.message || e).slice(0, 300) }
+  if (!found.linked) {
+    try {
+      cpSync(found.dir, repoDir, { recursive: true, force: true })
+    } catch (e) {
+      return { ok: false, message: '复制失败: ' + String(e.message || e).slice(0, 300) }
+    }
   }
   const add = await git(['add', name], 30000)
   if (add.code !== 0) return { ok: false, message: 'git add 失败: ' + (add.err || add.out).trim().slice(0, 300) }
@@ -231,7 +232,7 @@ async function pushPlugin(name) {
     return { ok: true, message: '已提交（推送失败: ' + (push.err || push.out).trim().slice(0, 120) + '）', committed: true, pushed: false }
   }
   state.lastSync = new Date().toISOString()
-  return { ok: true, message: '已推送 ✓', pushed: true }
+  return { ok: true, message: '已提交并推送 ✓', pushed: true }
 }
 
 /**
