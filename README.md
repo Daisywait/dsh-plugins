@@ -107,3 +107,5 @@ dsh-video 在 host 端通过 `ctx.tools` 注册两个模型可调用工具（无
 
 - Daisywait（仓库作者，方向与使用）
 - DeepSeek（deepseek-ai）：AI 开发助手，实现皮肤插件、插件管理器、引导脚本与文档
+
+> 本仓库的插件与脚本由 DeepSeek 持续迭代维护；历史提交均署名 DeepSeek（deepseek-ai）。
