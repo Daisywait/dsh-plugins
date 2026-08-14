@@ -2,7 +2,7 @@
 
 持续开发的 DeepSeek Harness (DSH) Web 插件源码仓库。每个插件一个文件夹；配合内置的「插件管理器」（`dsh-repo-sync`）可一键安装/卸载/提交，安装采用 **junction 符号链接**模式——源码即本仓库，改代码刷新即生效，无需复制。
 
-远端：`https://github.com/Daisywait/dsh-plugins`（私有）
+远端：`https://github.com/Daisywait/dsh-plugins`（公开）
 
 ## 结构
 
@@ -79,3 +79,8 @@ powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins
 - Host 半区用 `node:child_process` 执行 git（web profile 未挂载 shell/subprocess 服务，不要用 `ctx.get('shell')`）。
 - 安装用 junction 链接（`fs.symlinkSync(..., 'junction')`），Node/浏览器按普通目录解析。
 - 客户端与 Host 通信：Host 注册 `webServer` HTTP 路由（如 `/repo-sync/plugins`），客户端用 `fetch` 轮询/调用；不要用动态插件的 `harness.handle`/`host.call`（常驻插件没有这两个内置）。
+
+## 贡献者
+
+- Daisywait（仓库作者，方向与使用）
+- deepseek-v4-flash（AI 开发助手：皮肤插件、插件管理器、引导脚本与文档的实现）
