@@ -15,14 +15,14 @@ window.__ModuleLoader__.load({
 			".qt-bar button:active{transform:translateY(1px)}";
 
 		function apply(ctx) {
-			/* 共享枢纽：会话侧注册“引用写入”能力（有 inputActions），浮出工具条调用它 */
+			/* 引用能力枢纽：dock 常驻占位注册（有 inputActions），浮出工具条调用 */
 			const quoteHub = { handler: null };
 			const registerQuote = (fn) => {
 				quoteHub.handler = fn;
 				return () => { if (quoteHub.handler === fn) quoteHub.handler = null; };
 			};
 
-			/* 选区状态：文本 + 定位矩形 */
+			/* 选区状态 */
 			const selStore = { text: "", rect: null, visible: false, listeners: new Set() };
 			const bumpSel = () => selStore.listeners.forEach((fn) => fn((x) => (x || 0) + 1));
 
@@ -45,7 +45,7 @@ window.__ModuleLoader__.load({
 					}
 					selStore.text = text;
 					selStore.rect = rect;
-					selStore.visible = !!(text && rect && quoteHub.handler);
+					selStore.visible = !!(text && rect);
 					bumpSel();
 				} catch (e) {}
 			};
@@ -56,12 +56,23 @@ window.__ModuleLoader__.load({
 				bumpSel();
 			};
 
+			/* 常驻引用写入器：dock 占位，只要有会话就可用（不依赖悬停消息） */
+			function QuoteHub(props) {
+				const draftRef = react.useRef("");
+				draftRef.current = (props.input && props.input.draft) || "";
+				react.useEffect(() => registerQuote((text) => {
+					const d = draftRef.current || "";
+					const block = "> " + text.replace(/\n/g, "\n> ");
+					const sep = d.trim() === "" ? "" : "\n\n";
+					props.inputActions.setDraft(d + sep + block + "\n");
+				}), []);
+				return null;
+			}
+
 			/* 助手消息操作区 ⤴：引用当前选中文本（无选中则整条消息） */
 			function QuoteAction(props) {
 				const messageId = props.messageId;
 				const draft = props.useInput((s) => s.draft);
-				const draftRef = react.useRef("");
-				draftRef.current = draft;
 				const messageText = props.useSession((s) => {
 					const n = s.nodes.find((x) => x.kind === "assistant" && x.messageId === messageId);
 					if (!n || n.kind !== "assistant") return null;
@@ -69,13 +80,6 @@ window.__ModuleLoader__.load({
 					return parts.join("\n").trim();
 				}, (a, b) => a === b);
 				const selectedRef = react.useRef(null);
-
-				react.useEffect(() => quoteHub.register((text) => {
-					const d = draftRef.current || "";
-					const block = "> " + text.replace(/\n/g, "\n> ");
-					const sep = d.trim() === "" ? "" : "\n\n";
-					props.inputActions.setDraft(d + sep + block + "\n");
-				}), []);
 
 				const grabSelection = () => {
 					try {
@@ -91,7 +95,7 @@ window.__ModuleLoader__.load({
 					const text = selectedRef.current || messageText;
 					selectedRef.current = null;
 					if (!text) return;
-					const d = draftRef.current || "";
+					const d = draft || "";
 					const block = "> " + text.replace(/\n/g, "\n> ");
 					const sep = d.trim() === "" ? "" : "\n\n";
 					props.inputActions.setDraft(d + sep + block + "\n");
@@ -160,8 +164,12 @@ window.__ModuleLoader__.load({
 
 			ctx.effect(() => {
 				const slots = ctx.get("slots");
-				let dAction, dToolbar;
+				let dHub, dAction, dToolbar;
 				if (slots !== undefined) {
+					dHub = slots.inject("conversation.input.dock", () => slots.register(
+						{ name: "conversation.input.dock", id: "quote-hub", order: 60 },
+						(props) => react.createElement(QuoteHub, props)
+					));
 					dAction = slots.inject("conversation.chat.assistant-actions", () => slots.register(
 						{ name: "conversation.chat.assistant-actions", id: "quote", order: 20 },
 						(props) => react.createElement(QuoteAction, props)
@@ -172,10 +180,11 @@ window.__ModuleLoader__.load({
 					));
 				}
 				return () => {
+					if (dHub) { try { dHub(); } catch (e) {} }
 					if (dAction) { try { dAction(); } catch (e) {} }
 					if (dToolbar) { try { dToolbar(); } catch (e) {} }
 				};
-			}, "dsh-quote: selection toolbar + quote action");
+			}, "dsh-quote: selection toolbar + quote hub");
 		}
 
 		exports.apply = apply;

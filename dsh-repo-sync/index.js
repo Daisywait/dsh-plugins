@@ -56,6 +56,30 @@ async function pnpm(args, timeoutMs) {
   }
 }
 
+/** 运行插件自带的依赖安装/构建脚本（如 dsh-video 的 scripts/install-deps.ps1）。 */
+async function runDepsScript(dir) {
+  const script = join(dir, 'scripts', 'install-deps.ps1')
+  if (!existsSync(script)) return { ok: true, ran: false, message: '无依赖脚本' }
+  try {
+    const { stdout, stderr } = await execFileAsync('powershell', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script
+    ], {
+      cwd: dir,
+      timeout: 600000,
+      maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true
+    })
+    const ok = true
+    return { ok, ran: true, message: '依赖已安装（' + String(stdout || '').trim().split(/\r?\n/).pop() + '）' + (stderr ? '；stderr: ' + String(stderr).slice(0, 200) : '') }
+  } catch (e) {
+    return {
+      ok: false,
+      ran: true,
+      message: '依赖脚本失败: ' + String(e.stderr || e.message || e).slice(0, 300)
+    }
+  }
+}
+
 function isPkgDir(dir) {
   const pkgPath = join(dir, 'package.json')
   if (!existsSync(pkgPath)) return false
@@ -180,14 +204,19 @@ function removeYmlRow(name) {
   } catch (e) { return false }
 }
 
-/** 安装（官方方式）：pnpm add link:<仓库目录> + 自动注册。 */
+/** 安装（官方方式）：pnpm add link:<仓库目录> + 自动注册 + 可选依赖脚本。 */
 async function installPlugin(name) {
   const repo = listRepo().find((p) => p.name === name)
   if (!repo) return { ok: false, message: '插件仓库里没有 ' + name }
   const r = await pnpm(['add', 'link:' + repo.dir.replace(/\\/g, '/')], 180000)
   if (r.code !== 0) return { ok: false, message: 'pnpm 安装失败: ' + (r.err || r.out).trim().slice(0, 300) }
   const reg = ensureYmlRow(name)
-  return { ok: true, message: (reg.registered ? '已安装并注册（重启生效）' : '已安装（已注册过）'), installed: true, registered: reg.registered }
+  const deps = await runDepsScript(repo.dir)
+  const parts = []
+  if (reg.registered) parts.push('已注册（重启生效）')
+  else parts.push('已注册过')
+  if (deps.ran) parts.push(deps.ok ? '依赖已安装' : '依赖安装失败（' + deps.message.slice(0, 120) + '）')
+  return { ok: true, message: '已安装：' + parts.join('，'), installed: true, registered: reg.registered, depsOk: deps.ok }
 }
 
 /** 卸载（官方方式）：pnpm remove + 移除注册行。 */

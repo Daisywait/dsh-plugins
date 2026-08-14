@@ -1,4 +1,4 @@
-﻿# dsh-plugins 引导安装脚本（官方 pnpm 方式）
+# dsh-plugins 引导安装脚本（官方 pnpm 方式）
 # 用法：
 #   powershell -ExecutionPolicy Bypass .\install.ps1               # 安装仓库里全部插件
 #   powershell -ExecutionPolicy Bypass .\install.ps1 dsh-repo-sync # 只装一个
@@ -45,6 +45,14 @@ foreach ($n in $Names) {
     continue
   }
   Write-Host "    pnpm 安装成功" -ForegroundColor Green
+  $depsScript = Join-Path $src 'scripts\install-deps.ps1'
+  if (Test-Path $depsScript) {
+    Write-Host "    插件带依赖脚本，安装依赖并构建（$depsScript）" -ForegroundColor Yellow
+    powershell -NoProfile -ExecutionPolicy Bypass -File $depsScript
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host "    依赖安装失败（退出码 $LASTEXITCODE），请手动运行该脚本" -ForegroundColor Red
+    }
+  }
   $content = [System.IO.File]::ReadAllText($yml)
   if ($content -match "name: '$n'") {
     Write-Host "    注册行已存在，跳过" -ForegroundColor DarkGray

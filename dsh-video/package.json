@@ -1,0 +1,33 @@
+{
+  "name": "dsh-video",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "deps": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-deps.ps1"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.509",
+    "@remotion/renderer": "4.0.509",
+    "@remotion/player": "4.0.509",
+    "remotion": "4.0.509"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    },
+    "deps": true
+  }
+}

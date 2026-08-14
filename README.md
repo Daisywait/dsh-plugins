@@ -11,6 +11,7 @@ dsh-plugins/
 ├── dsh-skin-shiguangdailiren/   # 《时光代理人》皮肤：壁纸 + 暖粉毛玻璃主题 + GenUI 网页质感
 ├── dsh-repo-sync/               # 插件管理器：「仓库」标签页，一键安装/卸载/提交
 ├── dsh-quote/                   # 消息「引用」：助手消息操作区 ⤴ 把消息带进输入框
+├── dsh-video/                   # 视频工作室：Remotion 实时预览 + 参数交互 + 渲染 MP4（新「视频」标签页）
 └── README.md
 ```
 
@@ -57,7 +58,7 @@ powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins
    ```
 3. 重启 DSH。
 
-各插件注册 id：`dsh-skin-shiguangdailiren` → `skin-shiguangdailiren`；`dsh-repo-sync` → `repo-sync`。
+各插件注册 id：`dsh-skin-shiguangdailiren` → `skin-shiguangdailiren`；`dsh-repo-sync` → `repo-sync`；`dsh-video` → `dsh-video`（注意：dsh-video 手动安装后还要运行它的 `scripts/install-deps.ps1` 装渲染依赖）。
 
 ## 插件清单
 
@@ -66,6 +67,7 @@ powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins
 | dsh-skin-shiguangdailiren | 时光代理人壁纸 + 毛玻璃主题（明暗双套）；会话头部 🖌 打开右侧栏调节：透明度/水平位置/图片大小/GenUI 浓度/上传壁纸，全部自动保存；GenUI 卡片网页质感样式 |
 | dsh-repo-sync | 插件管理器：「仓库」标签页。已安装插件（状态 + 提交/同步 + 卸载）+ 仓库可安装（安装，官方 pnpm 方式）。提交自动 git add + commit + push |
 | dsh-quote | 消息引用：助手消息操作区 ⤴ 按钮，把该消息文本带进输入框（方便引用上下文） |
+| dsh-video | 视频工作室：会话头部「视频」标签页。Remotion 实时预览（标题卡/结束卡两种合成，可改文字、配色、Emoji、时长/帧率），一键渲染 H.264 MP4（720p/1080p），「全屏预览」在新浏览器标签页打开交互工作室 |
 
 ## 开发流程
 
@@ -73,6 +75,15 @@ powershell -Command "irm https://raw.githubusercontent.com/Daisywait/dsh-plugins
 2. 已安装（链接模式）→ 刷新页面即生效；host 改动需重启 DSH。
 3. 改完在「仓库」页点 **提交** → git commit + push 到 GitHub（自动）。
 4. 新插件：先在仓库建文件夹（package.json 带 `dsh.client: { platform: "web" }` + `exports["./client"]`）→ 「仓库」页点安装。
+
+### dsh-video 的依赖与构建（其余插件无此步骤）
+
+dsh-video 的 host 渲染栈（`@remotion/bundler`、`@remotion/renderer`）装在**插件自己的目录**（链接安装不共享 profile 的 node_modules）：
+
+- 首次安装：仓库「仓库」页点安装会自动运行 `scripts/install-deps.ps1`（`pnpm install --ignore-scripts` + `node scripts/build.mjs`）；或用 `install.ps1` 一并处理。
+- 手动：`cd dsh-video && powershell -ExecutionPolicy Bypass .\scripts\install-deps.ps1`
+- 改客户端源码（`src/`、`remotion/src/`）后重跑 `node scripts/build.mjs` 重建 `client.js` / `studio/studio.js`，刷新页面生效。
+- `node_modules/`、`output/`、`.bundle/` 均已 gitignore。
 
 ## 技术要点
 
