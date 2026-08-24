@@ -230,7 +230,11 @@ function registerTools(ctx) {
         'title 用一句话概括本次任务；goal 是最初目标或背景；summary 概括最终结果（2-3 句）；',
         'work 列出关键步骤；solved 列出实际解决了的问题；artifacts 列出产出的文件/成果（尽量带路径）；',
         'leftovers 列出遗留问题与后续建议；labels 给 1-4 个主题标签。',
-        '内容必须基于本会话真实发生的事，不夸大；没有的留空数组。返回归档编号，请转告用户。'
+        '内容必须基于本会话真实发生的事，不夸大；没有的留空数组。返回归档编号，请转告用户。',
+        '重要：如果本次任务是「无法解决 / 卡住 / 做不了」（solved 为空且 leftovers 说明了阻塞原因），',
+        '调用本工具后必须再调用 memory_save 保存一条失败结论记忆：',
+        'type=history，title 以「未解决」开头并概括任务，content 写清「卡点 + 已尝试的路径 + 等待什么」，tags 含 blocked 或 wontfix，importance 3-4。',
+        '这样未来的会话遇到同类问题时会被自动提示，避免重复踩坑。'
       ].join(' '),
       parameters: {
         type: 'object',
@@ -259,6 +263,7 @@ function registerTools(ctx) {
             mode: { type: 'string' },
             total: { type: 'integer' },
             markdownPath: { type: 'string' },
+            failure: { type: 'boolean', description: 'true=未解决记录（solved 为空且 leftovers 说明阻塞），模型应随后调用 memory_save 存入失败结论' },
             error: { type: 'string' },
           },
           additionalProperties: false,
@@ -268,10 +273,14 @@ function registerTools(ctx) {
             return [{ type: 'text', text: '会话归档失败：' + ((value && value.error) || '未知错误') }]
           }
           const verb = value.mode === 'updated' ? '更新并重新关闭' : '归档关闭'
-          return [{
-            type: 'text',
-            text: '🏁 会话已' + verb + '：#' + value.number + '《' + value.title + '》\n归档共 ' + value.total + ' 条 · Markdown 存档：' + value.markdownPath + '\n可在「归档」标签页查看全部记录。'
-          }]
+          const base = '🏁 会话已' + verb + '：#' + value.number + '《' + value.title + '》\n归档共 ' + value.total + ' 条 · Markdown 存档：' + value.markdownPath + '\n可在「归档」标签页查看全部记录。'
+          if (value.failure) {
+            return [{
+              type: 'text',
+              text: base + '\n\n⚠️ 这是一条未解决的记录（无 solved、有阻塞遗留）。请立刻再调用 memory_save 把它存进长期记忆：type=history，title 以「未解决」开头，content 写清卡点与已尝试路径，tags 含 blocked，importance 3——避免未来重复踩坑。'
+            }]
+          }
+          return [{ type: 'text', text: base }]
         },
       },
       execute: async (args) => {
@@ -296,13 +305,15 @@ function registerTools(ctx) {
             number: Number(a.number) || 0,
           }
           const { issue, updated } = upsertClose(norm, sess, '')
+          // 未解决模式：没有任何 solved，却存在说明阻塞的 leftovers（保守判定）
+          const failure = norm.solved.length === 0 && norm.leftovers.length > 0
           return {
             ok: true, number: issue.number, title: issue.title, state: issue.state,
             mode: updated ? 'updated' : 'created', total: issues.length,
-            markdownPath: markdownPathOf(issue), error: '',
+            markdownPath: markdownPathOf(issue), failure, error: '',
           }
         } catch (e) {
-          return { ok: false, number: 0, title: '', state: '', mode: '', total: issues.length, markdownPath: '', error: String(e && e.message || e) }
+          return { ok: false, number: 0, title: '', state: '', mode: '', total: issues.length, markdownPath: '', failure: false, error: String(e && e.message || e) }
         }
       },
       presentCall: (args) => ({

@@ -218,6 +218,21 @@ console.log('== 显式 sessionId 参数短路 ==')
   check('条目关联到 sess_explicit_42', !!mine2 && mine2.sessionId === 'sess_explicit_42')
 }
 
+console.log('== 未解决模式 → failure 标记 ==')
+{
+  const ctxReg = []
+  mod.apply({
+    inject(deps, fn) { if (deps[0] === 'tools') fn({ tools: { register: (t) => ctxReg.push(t) } }) },
+    effect(fn) { fn() },
+    get() { return undefined },
+  })
+  const ct = ctxReg.find((t) => t.name === 'session_close')
+  const rf = await ct.execute({ title: '尝试修复老路由器固件失败', summary: '该型号固件不开放刷机通道，已确认无法解决。', solved: [], leftovers: ['卡点：官方固件无第三方支持', '已试：降级/恢复模式均无效'], labels: ['无法解决'] })
+  check('solved 空 + leftovers 有 → failure=true', rf.ok === true && rf.failure === true)
+  const rs = await ct.execute({ title: '正常完成任务', summary: '完成。', solved: ['问题已解决'], leftovers: [] })
+  check('有 solved → failure=false', rs.ok === true && rs.failure === false)
+}
+
 console.log('')
 if (failures.length > 0) {
   console.error('失败 ' + failures.length + ' 项：\n- ' + failures.join('\n- '))

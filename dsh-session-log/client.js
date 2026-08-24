@@ -343,7 +343,7 @@ window.__ModuleLoader__.load({
 					});
 					d3 = slots.inject("sidebar.workspaces", function () {
 						return slots.register(
-							{ name: "sidebar.workspaces", id: "session-log-sidebar", order: 900 },
+							{ name: "sidebar.workspaces", id: "session-log-sidebar", order: 900, priority: 1 },
 							function (props) { return react.createElement(SidebarArchive, props); }
 						);
 					});
