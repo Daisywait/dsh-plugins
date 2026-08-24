@@ -81,6 +81,7 @@ type Job = {
 	composition: string | null;
 	width: number | null;
 	height: number | null;
+	props: VideoProps | null;
 };
 
 const LS = 'dsh-video:studio:v1:';
@@ -113,8 +114,10 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 	const [recentJobs, setRecentJobs] = useState<Job[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [msg, setMsg] = useState('');
+	const [mp4Url, setMp4Url] = useState<string | null>(null);
 	const pollRef = useRef<number | null>(null);
 	const openedRef = useRef<Window | null>(null);
+	const suppressResetRef = useRef(false);
 
 	useEffect(() => {
 		injectCss();
@@ -140,6 +143,28 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 		save('fps', fps);
 		save('resIdx', resIdx);
 	}, [kind, props, seconds, fps, resIdx]);
+
+	// 编辑参数时回到实时预览（关闭成品 MP4 预览；回填历史任务参数时跳过）
+	useEffect(() => {
+		if (suppressResetRef.current) {
+			suppressResetRef.current = false;
+			return;
+		}
+		setMp4Url(null);
+	}, [kind, props, seconds, fps]);
+
+	// 播放历史渲染任务：顶部预览换成其成品，并把当时的参数回填到右侧编辑面板
+	const applyJob = (rj: Job) => {
+		suppressResetRef.current = true;
+		setMp4Url(rj.outputUrl);
+		const m = /^(Title|End)-(\d+)s-(\d+)fps$/.exec(rj.composition || '');
+		if (m && KIND_LABELS[m[1] as Kind]) setKindState(m[1] as Kind);
+		if (m && (DURATIONS as readonly number[]).includes(Number(m[2]))) setSeconds(Number(m[2]));
+		if (m && (FPS_LIST as readonly number[]).includes(Number(m[3]))) setFps(Number(m[3]));
+		const idx = RESOLUTIONS.findIndex((r) => r.width === rj.width && r.height === rj.height);
+		if (idx >= 0) setResIdx(idx);
+		if (rj.props) setProps({ ...DEFAULT_PROPS, ...rj.props });
+	};
 
 	// 同步到独立页 URL + opener
 	useEffect(() => {
@@ -212,6 +237,8 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 			const d = await r.json();
 			const j = d.job as Job;
 			setJob(j);
+			// 渲染完成后，成品直接替换顶部预览区
+			if (j.status === 'done' && j.outputUrl) setMp4Url(j.outputUrl);
 			if (j.status === 'done' || j.status === 'error' || j.status === 'cancelled') {
 				setBusy(false);
 				setMsg('');
@@ -232,7 +259,18 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
 					composition: compositionId(kind, seconds, fps),
-					props,
+					props: {
+						...props,
+						// 渲染页面跑在 Remotion bundle 服务器上，相对背景图/音频路径要转成绝对地址
+						imageUrl:
+							props.imageUrl && !/^https?:\/\//i.test(props.imageUrl)
+								? window.location.origin + props.imageUrl
+								: props.imageUrl,
+						audioUrl:
+							props.audioUrl && !/^https?:\/\//i.test(props.audioUrl)
+								? window.location.origin + props.audioUrl
+								: props.audioUrl,
+					},
 					width: res.width,
 					height: res.height,
 				}),
@@ -272,10 +310,6 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 		openedRef.current = window.open(url, '_blank');
 	};
 
-	const openOutput = () => {
-		if (job && job.outputUrl) window.open(job.outputUrl, '_blank');
-	};
-
 	const comp = kind === 'Title' ? TitleCard : EndCard;
 	const progress = job ? Math.round((job.progress || 0) * 100) : 0;
 	const statusText = useMemo(() => {
@@ -311,26 +345,42 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 
 			<div className="dshv-grid">
 				<div className="dshv-card">
-					<div className="dshv-card-t">预览（实时）</div>
+					<div className="dshv-card-t">预览{mp4Url ? '（成品 MP4）' : '（实时）'}</div>
 					<div className="dshv-preview">
-						<Player
-							className="dshv-player"
-							component={comp}
-							inputProps={props}
-							compositionWidth={1280}
-							compositionHeight={720}
-							durationInFrames={seconds * fps}
-							fps={fps}
-							controls
-							loop
-							style={{ width: '100%', height: '100%' }}
-						/>
+						{mp4Url ? (
+							<video
+								className="dshv-player"
+								src={mp4Url}
+								controls
+								autoPlay
+								style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
+							/>
+						) : (
+							<Player
+								className="dshv-player"
+								component={comp}
+								inputProps={props}
+								compositionWidth={1280}
+								compositionHeight={720}
+								durationInFrames={seconds * fps}
+								fps={fps}
+								controls
+								loop
+								style={{ width: '100%', height: '100%' }}
+							/>
+						)}
 					</div>
 					<div className="dshv-row" style={{ marginTop: 10 }}>
-						<button className="dshv-btn" onClick={openStudio}>⛶ 全屏预览（新标签页）</button>
+						{mp4Url ? (
+							<button className="dshv-btn" onClick={() => setMp4Url(null)}>◀ 返回实时预览</button>
+						) : (
+							<button className="dshv-btn" onClick={openStudio}>⛶ 全屏预览（新标签页）</button>
+						)}
 					</div>
 					<div className="dshv-hint" style={{ marginTop: 8 }}>
-						预览时间轴为完整时长；「全屏预览」在新标签页打开可交互工作室。
+						{mp4Url
+							? '当前预览的是渲染成品；点「◀ 返回实时预览」回到 Remotion 实时画面。'
+							: '预览时间轴为完整时长；「全屏预览」在新标签页打开可交互工作室。'}
 					</div>
 				</div>
 
@@ -390,6 +440,14 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 						<input className="dshv-inp" value={props.emoji} maxLength={4} onChange={(e) => setProps({ ...props, emoji: e.target.value })} />
 					</div>
 					<div className="dshv-field">
+						<label>背景图 URL（留空 = 内置《时光代理人》壁纸）</label>
+						<input className="dshv-inp" value={props.imageUrl} placeholder="留空用内置壁纸" onChange={(e) => setProps({ ...props, imageUrl: e.target.value })} />
+					</div>
+					<div className="dshv-field">
+						<label>音频 URL（台词/背景乐，留空无音轨）</label>
+						<input className="dshv-inp" value={props.audioUrl} placeholder="/video/audio/xxx.mp3" onChange={(e) => setProps({ ...props, audioUrl: e.target.value })} />
+					</div>
+					<div className="dshv-field">
 						<label>配色</label>
 						<div className="dshv-colors">
 							{(
@@ -420,9 +478,6 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 						<button className="dshv-btn" data-tone="danger" onClick={cancelRender}>取消</button>
 					)}
 					{job && job.status === 'done' && job.outputUrl && (
-						<button className="dshv-btn" onClick={openOutput}>⛶ 在新标签页打开</button>
-					)}
-					{job && job.status === 'done' && job.outputUrl && (
 						<a className="dshv-btn" href={job.outputUrl} download style={{ textDecoration: 'none', display: 'inline-block' }}>
 							⬇ 下载 MP4
 						</a>
@@ -433,9 +488,6 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 					<div className="dshv-prog"><i style={{ width: progress + '%' }} /></div>
 				)}
 				{job && job.status === 'error' && job.error && <div className="dshv-err" style={{ marginTop: 8 }}>{job.error}</div>}
-				{job && job.status === 'done' && job.outputUrl && (
-					<video className="dshv-video" src={job.outputUrl} controls style={{ maxHeight: 420 }} />
-				)}
 				{job && job.status === 'done' && (
 					<div className="dshv-hint" style={{ marginTop: 8 }}>
 						已输出 {job.width}×{job.height} @ {fps}fps · {seconds}s（{job.composition}）
@@ -466,9 +518,9 @@ export const Studio: React.FC<{ standalone?: boolean }> = ({ standalone }) => {
 									</a>
 								)}
 								{done && rj.outputUrl && (
-									<a className="dshv-btn" data-tone="ghost" href={rj.outputUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', padding: '2px 10px', fontSize: 11 }}>
-										⛶ 播放
-									</a>
+									<button className="dshv-btn" data-tone="ghost" style={{ padding: '2px 10px', fontSize: 11 }} onClick={() => applyJob(rj)}>
+										▶ 播放
+									</button>
 								)}
 							</div>
 						);

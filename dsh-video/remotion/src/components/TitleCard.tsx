@@ -1,6 +1,8 @@
 import React from 'react';
 import {
 	AbsoluteFill,
+	Audio,
+	Img,
 	interpolate,
 	spring,
 	useCurrentFrame,
@@ -8,6 +10,8 @@ import {
 } from 'remotion';
 import type { VideoProps } from '../props';
 import { rand } from '../props';
+// 内置壁纸（从 dsh-web-ui 皮肤 art.ts 提取的《时光代理人》壁纸，渲染不依赖任何 HTTP 路由）
+import wallpaper from '../assets/wallpaper.jpg';
 
 const FONT =
 	'-apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif';
@@ -94,7 +98,47 @@ export const TitleCard: React.FC<VideoProps> = (props) => {
 				overflow: 'hidden',
 			}}
 		>
+			{/* 背景：整张壁纸完整显示（contain），上下留白用同图模糊铺底，不裁掉人物 */}
+			<>
+				{/* 铺底层：cover 放大 + 模糊，填满画布（超宽图两侧/上下不会露黑） */}
+				<Img
+					src={props.imageUrl || wallpaper}
+					style={{
+						position: 'absolute',
+						inset: 0,
+						width: '100%',
+						height: '100%',
+						objectFit: 'cover',
+						filter: 'blur(60px)',
+						transform: 'scale(1.25)',
+					}}
+				/>
+				{/* 完整壁纸：contain 显示整张图（2402×1080 超宽图会上下留边，铺底层正好补上） */}
+				<Img
+					src={props.imageUrl || wallpaper}
+					style={{
+						position: 'absolute',
+						inset: 0,
+						width: '100%',
+						height: '100%',
+						objectFit: 'contain',
+					}}
+				/>
+				{/* 主题色叠加，保证文字可读 */}
+				<AbsoluteFill
+					style={{
+						background: `linear-gradient(160deg, ${props.bg1}d9, ${props.bg1}73 45%, ${props.bg2}b3)`,
+					}}
+				/>
+			</>
 			<Orbs props={props} />
+			{/* 背景台词/音乐：随视频时长播放，结尾 0.8s 淡出防硬切 */}
+			{props.audioUrl ? (
+				<Audio
+					src={props.audioUrl}
+					volume={(f) => Math.min(1, Math.max(0, (durationInFrames - f) / (fps * 0.8)))}
+				/>
+			) : null}
 			<AbsoluteFill
 				style={{
 					display: 'flex',
@@ -162,6 +206,46 @@ export const TitleCard: React.FC<VideoProps> = (props) => {
 				>
 					—— {props.byline}
 				</div>
+				{props.install ? (
+					<div
+						style={{
+							marginTop: 30,
+							display: 'flex',
+							flexDirection: 'column',
+							alignItems: 'center',
+							gap: 10,
+							opacity: installIn,
+							transform: `translateY(${(1 - installIn) * 18}px)`,
+						}}
+					>
+						<span
+							style={{
+								fontSize: 20,
+								letterSpacing: 6,
+								color: props.textColor + '88',
+							}}
+						>
+							安装方法
+						</span>
+						<div
+							style={{
+								fontFamily:
+									'ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace',
+								fontSize: 27,
+								lineHeight: 1.5,
+								color: props.accent,
+								background: 'rgba(0,0,0,0.32)',
+								border: `1px solid ${props.accent}55`,
+								borderRadius: 12,
+								padding: '14px 26px',
+								whiteSpace: 'pre-wrap',
+								maxWidth: '88%',
+							}}
+						>
+							{props.install}
+						</div>
+					</div>
+				) : null}
 				<div
 					style={{
 						position: 'absolute',

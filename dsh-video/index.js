@@ -4,7 +4,7 @@
 //   - HTTP 路由：状态 / 渲染任务（进度轮询、取消）/ 输出文件 / 独立工作室页
 // 依赖：@remotion/bundler + @remotion/renderer（装在插件自己的 node_modules，
 //       缺失时在 /video/status 与渲染接口给出可操作的提示）。
-import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,11 +13,13 @@ const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
 const REMOTION_DIR = join(PLUGIN_DIR, 'remotion')
 const ENTRY_POINT = join(REMOTION_DIR, 'src', 'index.ts')
 const OUT_DIR = join(PLUGIN_DIR, 'output')
+const AUDIO_DIR = join(PLUGIN_DIR, 'audio')
 const BUNDLE_DIR = join(PLUGIN_DIR, '.bundle')
 const STUDIO_DIR = join(PLUGIN_DIR, 'studio')
 const OUTPUT_KEEP = 20
 
 mkdirSync(OUT_DIR, { recursive: true })
+mkdirSync(AUDIO_DIR, { recursive: true })
 
 const state = {
   ready: false,
@@ -90,6 +92,36 @@ async function getServeUrl(job) {
 const jobs = new Map()
 let renderQueue = Promise.resolve()
 
+// 启动时从磁盘恢复已完成任务（output/*.json 边车），让「最近渲染」列表在 DSH 重启后保留，
+// 且能拿到当时的 props（供工作室编辑面板回填）。
+function seedJobsFromDisk() {
+  let files = []
+  try { files = readdirSync(OUT_DIR).filter((f) => f.endsWith('.json')) } catch (e) { return }
+  for (const f of files) {
+    try {
+      const m = JSON.parse(readFileSync(join(OUT_DIR, f), 'utf8'))
+      if (!m || !m.id || !m.outputUrl || !existsSync(join(OUT_DIR, m.id + '.mp4'))) continue
+      jobs.set(m.id, {
+        id: m.id,
+        status: 'done',
+        progress: 1,
+        composition: m.composition || null,
+        width: m.width || null,
+        height: m.height || null,
+        props: m.props || null,
+        cancelled: false,
+        error: null,
+        outputUrl: m.outputUrl,
+        startedAt: m.startedAt || null,
+        doneAt: m.doneAt || null,
+        bundleProgress: null,
+        browserProgress: null
+      })
+    } catch (e) {}
+  }
+}
+seedJobsFromDisk()
+
 function snapshotJob(job) {
   const out = {
     id: job.id,
@@ -102,6 +134,7 @@ function snapshotJob(job) {
     composition: job.composition || null,
     width: job.width || null,
     height: job.height || null,
+    props: job.props || null,
     startedAt: job.startedAt,
     doneAt: job.doneAt
   }
@@ -147,6 +180,7 @@ async function runJob(job, opts) {
       composition: videoConfig,
       serveUrl,
       codec: 'h264',
+      audioCodec: 'aac',
       outputLocation: outputPath,
       inputProps: opts.props,
       overwrite: true,
@@ -175,11 +209,28 @@ async function runJob(job, opts) {
     }
   }
   job.doneAt = new Date().toISOString()
+  // 边车文件：记住本次渲染的 props（含 doneAt），重启后用于恢复「最近渲染」列表与编辑面板回填
+  if (job.status === 'done' && job.outputUrl) {
+    try {
+      writeFileSync(join(OUT_DIR, job.id + '.json'), JSON.stringify({
+        id: job.id,
+        status: 'done',
+        composition: job.composition,
+        width: job.width,
+        height: job.height,
+        props: job.props || null,
+        outputUrl: job.outputUrl,
+        startedAt: job.startedAt,
+        doneAt: job.doneAt
+      }))
+    } catch (e) {}
+  }
   // 清理：只保留最近的输出
   try {
     const files = readdirSync(OUT_DIR).filter((f) => f.endsWith('.mp4')).sort()
     for (const f of files.slice(0, Math.max(0, files.length - OUTPUT_KEEP))) {
       rmSync(join(OUT_DIR, f), { force: true })
+      rmSync(join(OUT_DIR, f.replace(/\.mp4$/, '.json')), { force: true })
     }
   } catch (e) {}
 }
@@ -194,6 +245,7 @@ function startRender(opts) {
     composition: opts.composition,
     width: opts.width,
     height: opts.height,
+    props: opts.props || null,
     cancelled: false,
     cancelSignal: cs ? cs.cancelSignal : undefined,
     cancelFn: cs ? cs.cancel : undefined,
@@ -218,7 +270,10 @@ const TOOL_DEFAULTS = {
   bg1: '#0f0c29',
   bg2: '#302b63',
   accent: '#ffd166',
-  textColor: '#ffffff'
+  textColor: '#ffffff',
+  install: '仓库标签页 → 一键安装 → 重启 DSH',
+  imageUrl: '/skin/640.jpg',
+  audioUrl: ''
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -301,6 +356,9 @@ function registerVideoTools(toolsCtx) {
         bg2: { type: 'string', description: '背景辅色（CSS 颜色）', default: '#302b63' },
         accent: { type: 'string', description: '强调色（CSS 颜色）', default: '#ffd166' },
         textColor: { type: 'string', description: '文字颜色（CSS 颜色）', default: '#ffffff' },
+        install: { type: 'string', description: '安装方法文案（多行用换行）', default: '仓库标签页 → 一键安装 → 重启 DSH' },
+        imageUrl: { type: 'string', description: '背景图 URL（留空用纯渐变）', default: '/skin/640.jpg' },
+        audioUrl: { type: 'string', description: '背景音乐/台词音频 URL（留空无音轨；放 dsh-video/audio/ 下经 /video/audio/ 访问）', default: '' },
         wait: { type: 'boolean', description: '是否等待渲染完成，默认 true', default: true }
       },
       additionalProperties: false
@@ -340,7 +398,10 @@ function registerVideoTools(toolsCtx) {
         bg1: strArg(args && args.bg1, TOOL_DEFAULTS.bg1),
         bg2: strArg(args && args.bg2, TOOL_DEFAULTS.bg2),
         accent: strArg(args && args.accent, TOOL_DEFAULTS.accent),
-        textColor: strArg(args && args.textColor, TOOL_DEFAULTS.textColor)
+        textColor: strArg(args && args.textColor, TOOL_DEFAULTS.textColor),
+        install: strArg(args && args.install, TOOL_DEFAULTS.install),
+        imageUrl: strArg(args && args.imageUrl, TOOL_DEFAULTS.imageUrl),
+        audioUrl: strArg(args && args.audioUrl, TOOL_DEFAULTS.audioUrl)
       }
       const composition = kind + '-' + seconds + 's-' + fps + 'fps'
       const job = startRender({ composition, props, width, height })
@@ -439,7 +500,13 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.webp': 'image/webp',
   '.woff2': 'font/woff2',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac'
 }
 
 function apply(ctx) {
@@ -598,6 +665,25 @@ function apply(ctx) {
           const job = jobs.get(jobMatch[1])
           if (!job) { json(res, { ok: false, error: '任务不存在' }, 404); return }
           json(res, { ok: true, job: snapshotJob(job) })
+          return
+        }
+        // 音频素材：dsh-video/audio/ 下的文件（供合成 <Audio> 组件与预览使用）
+        if (pathname.startsWith('/video/audio/')) {
+          const file = pathname.slice('/video/audio/'.length)
+          if (!file || !/^[A-Za-z0-9._-]+\.(mp3|wav|m4a|aac|ogg|flac)$/.test(file)) { res.writeHead(400); res.end(); return }
+          const p = join(AUDIO_DIR, file)
+          if (!existsSync(p)) { res.writeHead(404); res.end('not found'); return }
+          const ext = '.' + file.slice(file.lastIndexOf('.') + 1).toLowerCase()
+          res.writeHead(200, {
+            'content-type': MIME[ext] || 'application/octet-stream',
+            'cache-control': 'public, max-age=86400',
+            'access-control-allow-origin': '*',
+            'content-length': String(statSync(p).size)
+          })
+          if (req.method === 'HEAD') { res.end(); return }
+          const stream = createReadStream(p)
+          stream.on('error', () => { try { res.destroy() } catch (e) {} })
+          stream.pipe(res)
           return
         }
         res.writeHead(404)

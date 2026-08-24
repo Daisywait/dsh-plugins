@@ -44,6 +44,7 @@ try {
 		jsx: 'automatic',
 		define: { 'process.env.NODE_ENV': '"production"' },
 		plugins: [cssInjectPlugin],
+		loader: { '.jpg': 'dataurl' },
 		logLevel: 'warning',
 	});
 	const body = await readFile(tmpOut, 'utf8');
@@ -71,6 +72,7 @@ try {
 		jsx: 'automatic',
 		define: { 'process.env.NODE_ENV': '"production"' },
 		plugins: [cssInjectPlugin],
+		loader: { '.jpg': 'dataurl' },
 		logLevel: 'warning',
 	});
 

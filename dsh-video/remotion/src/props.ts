@@ -9,6 +9,8 @@ export interface VideoProps {
 	accent: string;
 	textColor: string;
 	install: string;
+	imageUrl: string;
+	audioUrl: string;
 }
 
 export const DEFAULT_PROPS: VideoProps = {
@@ -21,6 +23,10 @@ export const DEFAULT_PROPS: VideoProps = {
 	accent: '#ffd166',
 	textColor: '#ffffff',
 	install: '仓库标签页 → 一键安装 → 重启 DSH',
+	// 留空 = 用内置壁纸（dsh-web-ui 皮肤同款，已内嵌进合成）
+	imageUrl: '',
+	// 留空 = 无音轨（可填 /video/audio/xxx.mp3 之类）
+	audioUrl: '',
 };
 
 // 注册的时长（秒）× 帧率组合，共同构成 composition id

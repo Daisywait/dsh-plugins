@@ -1,0 +1,8 @@
+# dsh-video bundle patch — inserted when installed via
+# `dsh plugin --profile web add link:<repo>/dsh-video`.
+# The row resolves the package by name through the profile's node_modules;
+# the node half registers the video_render / video_job_status model tools
+# and the HTTP status route, the dshClient half provides the 「视频」tab UI.
+- insert:
+    - id: dsh-video
+      name: 'dsh-video'
