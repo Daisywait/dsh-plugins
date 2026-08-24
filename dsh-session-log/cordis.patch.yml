@@ -1,0 +1,9 @@
+# dsh-session-log bundle patch — inserted when installed via
+# `dsh plugin --profile web add link:<repo>/dsh-session-log`.
+# The row resolves the package by name through the profile's node_modules;
+# the host half registers the session_close / session_log_list tools and the
+# /session-log/* HTTP routes, the client half provides the 「归档」tab
+# (conversation.view) and the input-dock 收尾 button.
+- insert:
+    - id: dsh-session-log
+      name: 'dsh-session-log'
