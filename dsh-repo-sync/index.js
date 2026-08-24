@@ -986,10 +986,16 @@ async function updatePlugin(name) {
   if (found.kind !== 'community') return { ok: false, message: name + ' 是自制插件，请使用「推送」同步到远端' }
   let spec = ''
   if (found.spec.startsWith('github:')) {
-    // github 直装源：抓仓库 package.json 版本；有新版本按原 spec 重新 add（拉取默认分支最新）
+    // github 直装源：抓仓库 package.json 版本；有新版本必须先 remove 再 add——
+    // pnpm 对相同 spec（github:owner/repo）视为 Already up to date 不重拉 HEAD，
+    // 只有 remove 掉旧依赖后重新 add 才会强制解析最新 commit。
     const ghLatest = await githubLatestVersion(found.spec)
     if (ghLatest && found.version && compareVersions(ghLatest, found.version) <= 0) {
       return { ok: true, message: '已是最新版本 v' + found.version, updated: false }
+    }
+    const rm = await dshPlugin(['remove', found.name], 120000)
+    if (rm.code !== 0) {
+      return { ok: false, message: '移除旧版本失败（dsh plugin 退出码 ' + rm.code + '）: ' + (rm.err || rm.out).trim().slice(0, 200) }
     }
     spec = found.spec
   } else {
