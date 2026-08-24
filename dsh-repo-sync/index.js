@@ -707,23 +707,32 @@ function compareVersions(a, b) {
  *  （lstat 语义不跟随链接），必须同时接受 isSymbolicLink()。
  *  只统计 profile package.json dependencies 里真实声明的插件——pnpm remove
  *  卸载 link: 依赖可能残留 node_modules 链接，残留目录不算已安装（否则点卸载
- *  会报 CANNOT_REMOVE_MISSING_DEPS）。 */
+ *  会报 CANNOT_REMOVE_MISSING_DEPS）。
+ *  kind 判定：依赖 spec 以 link: 开头 → 自制(self)；npm/github → 社区(community)。 */
 function listInstalled() {
   const out = []
   let entries = []
   try { entries = readdirSync(PLUGIN_ROOT, { withFileTypes: true }) } catch (e) { return out }
-  let declared = new Set()
+  let deps = {}
   try {
     const manifest = JSON.parse(readFileSync(join(PROFILE_DIR, 'package.json'), 'utf8'))
-    declared = new Set(Object.keys(manifest.dependencies || {}))
+    deps = manifest.dependencies || {}
   } catch (e) { /* 读不到清单时退回全部扫描 */ }
   for (const ent of entries) {
     if (!ent.isDirectory() && !ent.isSymbolicLink()) continue
     if (!isPkgDir(join(PLUGIN_ROOT, ent.name))) continue
-    if (!declared.has(ent.name)) continue
+    if (!(ent.name in deps)) continue
     let linked = false
     try { linked = lstatSync(join(PLUGIN_ROOT, ent.name)).isSymbolicLink() } catch (e) {}
-    out.push({ name: ent.name, dir: join(PLUGIN_ROOT, ent.name), linked, version: pkgVersion(join(PLUGIN_ROOT, ent.name)) })
+    const spec = String(deps[ent.name] || '')
+    out.push({
+      name: ent.name,
+      dir: join(PLUGIN_ROOT, ent.name),
+      linked,
+      version: pkgVersion(join(PLUGIN_ROOT, ent.name)),
+      kind: spec.startsWith('link:') ? 'self' : 'community',
+      spec
+    })
   }
   return out
 }
@@ -748,7 +757,10 @@ async function npmLatestVersion(name) {
   }
 }
 
-/** 扫描插件仓库（dsh-plugins 里带 dsh.client 的目录）。 */
+/** 扫描插件仓库（dsh-plugins 里带 dsh.client 的目录）。
+ *  source: 'self' 自制（无外部 repository）；'community-copy' 社区插件副本
+ *  （package.json 声明了外部 GitHub repository，如 dsh-meme、dsh-vision-recognizer）——
+ *  副本目录不应作为自制插件推送或从 available 安装。 */
 function listRepo() {
   const out = []
   let entries = []
@@ -757,7 +769,15 @@ function listRepo() {
     if (!ent.isDirectory()) continue
     const dir = join(PLUGINS_REPO, ent.name)
     if (!isPkgDir(dir)) continue
-    out.push({ name: ent.name, dir })
+    let source = 'self'
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+      const repoUrl = String((pkg.repository && (pkg.repository.url || pkg.repository)) || '')
+      if (/github\.com[\/:][^\/]+\/[^\/]+/.test(repoUrl) && !/Daisywait[\/:]dsh-plugins/.test(repoUrl)) {
+        source = 'community-copy'
+      }
+    } catch (e) { /* 读不到就按自制 */ }
+    out.push({ name: ent.name, dir, source })
   }
   return out
 }
@@ -786,20 +806,17 @@ function dirHash(dir) {
 
 async function pluginsSnapshot() {
   const installed = listInstalled()
-  const repoNames = new Set(listRepo().map((p) => p.name))
+  const repoDirs = new Set(listRepo().map((p) => p.name))
   const installedOut = []
   for (const p of installed) {
     const repoDir = join(PLUGINS_REPO, p.name)
-    const inRepo = repoNames.has(p.name)
+    const inRepo = repoDirs.has(p.name)
     const changed = p.linked ? false : (inRepo ? dirHash(p.dir) !== dirHash(repoDir) : true)
-    // 升级判定：链接模式跟随 git pull 天然同步；非链接且有更新源才提示
     let update = null
-    if (!p.linked) {
-      if (inRepo) {
-        const repoVer = pkgVersion(repoDir)
-        if (repoVer && p.version && compareVersions(repoVer, p.version) > 0) {
-          update = { via: 'repo', from: p.version, to: repoVer }
-        }
+    if (p.kind === 'community') {
+      // 社区插件：npm 源查 registry 最新版；github 源总是可更新（重新拉取）
+      if (p.spec.startsWith('github:')) {
+        update = { via: 'github', from: p.version, to: 'latest' }
       } else {
         const latest = await npmLatestVersion(p.name)
         if (latest && p.version && compareVersions(latest, p.version) > 0) {
@@ -809,6 +826,7 @@ async function pluginsSnapshot() {
     }
     installedOut.push({
       name: p.name,
+      kind: p.kind,
       inRepo,
       changed,
       linked: p.linked,
@@ -819,7 +837,11 @@ async function pluginsSnapshot() {
   }
   return {
     installed: installedOut,
-    available: listRepo().map((p) => ({ name: p.name, version: pkgVersion(join(PLUGINS_REPO, p.name)) })).filter((p) => !installed.some((i) => i.name === p.name))
+    // 可安装 = 仓库自制目录里、未安装的（社区副本不提供安装入口）
+    available: listRepo()
+      .filter((p) => p.source === 'self')
+      .map((p) => ({ name: p.name, version: pkgVersion(join(PLUGINS_REPO, p.name)) }))
+      .filter((p) => !installed.some((i) => i.name === p.name))
   }
 }
 
@@ -827,6 +849,7 @@ async function pluginsSnapshot() {
 async function installPlugin(name) {
   const repo = listRepo().find((p) => p.name === name)
   if (!repo) return { ok: false, message: '插件仓库里没有 ' + name }
+  if (repo.source !== 'self') return { ok: false, message: name + ' 是社区插件副本，请从「社区插件」标签安装或更新' }
   const r = await dshPlugin(['add', 'link:' + repo.dir.replace(/\\/g, '/')], 180000)
   if (r.code !== 0) return { ok: false, message: 'dsh plugin 安装失败: ' + (r.err || r.out).trim().slice(0, 300) }
   const deps = await runDepsScript(repo.dir)
@@ -848,10 +871,11 @@ async function uninstallPlugin(name) {
     : '卸载失败（dsh plugin 退出码 ' + r.code + '）' + hint + (detail ? '：' + detail.slice(0, 160) : ''), removed }
 }
 
-/** 同步/提交插件到仓库（链接模式跳过复制，直接 git）。 */
+/** 推送自制插件到远端（链接模式跳过复制，直接 git）。社区插件拒绝。 */
 async function pushPlugin(name) {
   const found = listInstalled().find((p) => p.name === name)
   if (!found) return { ok: false, message: '未找到插件 ' + name }
+  if (found.kind !== 'self') return { ok: false, message: name + ' 是社区插件，请使用「更新」获取作者新版本' }
   const repoDir = join(PLUGINS_REPO, name)
   if (!existsSync(PLUGINS_REPO)) return { ok: false, message: '插件仓库不存在: ' + PLUGINS_REPO }
   if (!found.linked) {
@@ -882,31 +906,30 @@ async function pushPlugin(name) {
 }
 
 /**
- * 升级已安装插件到新版本：
- * - 链接模式：跟随仓库 git pull 天然同步，无需升级（直接提示）
- * - 非链接 + 仓库里有同名插件：把仓库版本覆盖复制回已安装目录
- * - 非链接 + npm 社区包：dsh plugin add <name>@<latest> 升级
+ * 更新社区插件到最新版（完全安装新版本，非增量拉取）：
+ * - npm 源：dsh plugin add <name>@<latest>（registry 最新版）
+ * - github 源（spec 以 github: 开头）：dsh plugin add github:<owner>/<repo> 重新拉取最新
+ * 自制插件不走此路径（应用推送）。
  */
 async function updatePlugin(name) {
   const found = listInstalled().find((p) => p.name === name)
   if (!found) return { ok: false, message: '未找到插件 ' + name }
-  if (found.linked) return { ok: true, message: '链接模式插件跟随仓库自动同步，无需单独升级' }
-  const repoDir = join(PLUGINS_REPO, name)
-  const inRepo = existsSync(repoDir) && isPkgDir(repoDir)
-  if (inRepo) {
-    try {
-      rmSync(found.dir, { recursive: true, force: true })
-      cpSync(repoDir, found.dir, { recursive: true, force: true })
-    } catch (e) {
-      return { ok: false, message: '覆盖复制失败: ' + String(e.message || e).slice(0, 300) }
+  if (found.kind !== 'community') return { ok: false, message: name + ' 是自制插件，请使用「推送」同步到远端' }
+  let spec = ''
+  if (found.spec.startsWith('github:')) {
+    // github 直装源：按原 spec 重新 add（拉取默认分支最新）
+    spec = found.spec
+  } else {
+    const latest = await npmLatestVersion(name)
+    if (!latest) return { ok: false, message: '无法获取 ' + name + ' 的最新版本（npm registry 查询失败）' }
+    if (found.version && compareVersions(latest, found.version) <= 0) {
+      return { ok: true, message: '已是最新版本 v' + found.version, updated: false }
     }
-    return { ok: true, message: '已更新为仓库版本 v' + pkgVersion(repoDir) + '（重启 DSH 生效）' }
+    spec = name + '@' + latest
   }
-  const latest = await npmLatestVersion(name)
-  if (!latest) return { ok: false, message: '无法获取 ' + name + ' 的最新版本（npm registry 查询失败）' }
-  const r = await dshPlugin(['add', name + '@' + latest], 300000)
-  if (r.code !== 0) return { ok: false, message: '升级失败（dsh plugin 退出码 ' + r.code + '）: ' + (r.err || r.out).trim().slice(0, 200) }
-  return { ok: true, message: '已升级到 v' + latest + '（重启 DSH 生效）' }
+  const r = await dshPlugin(['add', spec], 300000)
+  if (r.code !== 0) return { ok: false, message: '更新失败（dsh plugin 退出码 ' + r.code + '）: ' + (r.err || r.out).trim().slice(0, 200) }
+  return { ok: true, message: '已更新 ' + name + '（重启 DSH 生效）', updated: true }
 }
 
 /**

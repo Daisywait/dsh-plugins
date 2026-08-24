@@ -1,0 +1,7 @@
+# dsh-repo-sync bundle patch — inserted when installed via
+# `dsh plugin --profile web add link:<repo>/dsh-repo-sync`.
+# Plugin manager: the 「插件管理」tab installs/uninstalls/commits plugins
+# through the official `dsh plugin` CLI.
+- insert:
+    - id: repo-sync
+      name: 'dsh-repo-sync'

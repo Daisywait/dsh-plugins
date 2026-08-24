@@ -47,6 +47,9 @@ window.__ModuleLoader__.load({
 			".rps-detail-desc{-webkit-line-clamp:unset;margin:4px 0 8px}" +
 			".rps-detail-meta{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}" +
 			".rps-meta-chip{font-size:11px;color:var(--dsw-alias-label-secondary);border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:999px;padding:2px 10px}" +
+			".rps-kind{flex:none;font-size:10px;font-weight:600;border-radius:6px;padding:1px 7px;white-space:nowrap}" +
+			".rps-kind[data-kind=self]{color:var(--dsw-alias-state-business-primary);border:1px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 40%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 10%,transparent)}" +
+			".rps-kind[data-kind=community]{color:var(--dsw-alias-label-secondary);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}" +
 			".rps-meta-link{color:var(--dsw-alias-brand-primary);text-decoration:none}" +
 			".rps-meta-link:hover{text-decoration:underline}" +
 			".rps-kw-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}" +
@@ -140,11 +143,20 @@ window.__ModuleLoader__.load({
 					synced: "已同步",
 					commit: "提交",
 					sync: "同步",
-					update: "升级",
-					updating: "升级中…",
-					updateTo: "升级 v{ver}",
-					updatedOk: "✓ 已升级 {name}，重启 DSH 生效",
-					updateFail: "✗ 升级失败",
+					push: "推送",
+					pushing: "推送中…",
+					pushedOk: "✓ 已推送 {name} 到远端",
+					pushFail: "✗ 推送失败",
+					update: "更新",
+					updating: "更新中…",
+					updateTo: "更新 v{ver}",
+					upToDate: "已最新",
+					updatedOk: "✓ 已更新 {name}，重启 DSH 生效",
+					updateFail: "✗ 更新失败",
+					selfTag: "自制",
+					communityTag: "社区",
+					sectionSelf: "自制插件（推送）",
+					sectionCommunity: "社区插件（更新）",
 					linkedAuto: "链接模式",
 					repoVer: "仓库 v{ver}",
 					noUpdate: "已是最新",
@@ -166,7 +178,7 @@ window.__ModuleLoader__.load({
 					hintCommunity: "点击插件查看介绍；数据来自 npm 与 GitHub topic:dsh-plugin，安装走官方 dsh plugin，装完重启 DSH 生效。",
 					title: "插件管理",
 					repoPath: "插件仓库: ",
-					hintLocal: "安装/卸载后重启 DSH 生效；链接模式下改插件源码只需刷新页面。",
+					hintLocal: "自制插件「推送」到远端 GitHub；社区插件「更新」到作者最新版。装/卸后重启 DSH 生效。",
 					langZh: "中文",
 					langEn: "EN",
 					ghOnly: "GitHub 仓库插件",
@@ -191,11 +203,20 @@ window.__ModuleLoader__.load({
 					synced: "synced",
 					commit: "Commit",
 					sync: "Sync",
+					push: "Push",
+					pushing: "Pushing…",
+					pushedOk: "✓ Pushed {name} to remote",
+					pushFail: "✗ Push failed",
 					update: "Update",
 					updating: "Updating…",
 					updateTo: "Update to v{ver}",
+					upToDate: "up to date",
 					updatedOk: "✓ Updated {name}, restart DSH",
 					updateFail: "✗ Update failed",
+					selfTag: "self",
+					communityTag: "community",
+					sectionSelf: "Self plugins (Push)",
+					sectionCommunity: "Community plugins (Update)",
 					linkedAuto: "linked",
 					repoVer: "repo v{ver}",
 					noUpdate: "up to date",
@@ -217,7 +238,7 @@ window.__ModuleLoader__.load({
 					hintCommunity: "Click a plugin for details; data from npm and GitHub topic:dsh-plugin; install via dsh plugin, then restart DSH.",
 					title: "Plugin Manager",
 					repoPath: "Plugin repo: ",
-					hintLocal: "Restart DSH after install/uninstall; linked plugins hot-reload on refresh.",
+					hintLocal: "Push self plugins to the remote GitHub repo; update community plugins to the author's latest. Restart DSH after install/uninstall.",
 					langZh: "中文",
 					langEn: "EN",
 					ghOnly: "GitHub repository plugin",
@@ -760,29 +781,51 @@ window.__ModuleLoader__.load({
 						tab === "community"
 							? react.createElement(CommunityView, {})
 							: react.createElement("div", null,
-								react.createElement("div", { className: "rps-section" }, t("installed")),
-								installed.length === 0
+								react.createElement("div", { className: "rps-section" }, t("sectionSelf")),
+								installed.filter((p) => p.kind === "self").length === 0
 									? react.createElement("div", { className: "rps-msg" }, t("noInstalled"))
 									: react.createElement("div", null,
-										installed.map((p) => {
+										installed.filter((p) => p.kind === "self").map((p) => {
 											const st = p.linked ? "link" : (!p.inRepo ? "none" : (p.changed ? "dirty" : "ok"));
 											const label = p.linked ? t("linkedMode") : (!p.inRepo ? t("notInRepo") : (p.changed ? t("changed") : t("synced")));
 											return react.createElement("div", { className: "rps-plug", key: p.name },
 												react.createElement("span", { className: "rps-plug-name" }, p.name),
-												p.version ? react.createElement("span", { className: "rps-ver", "data-update": p.update ? "true" : undefined, title: p.update ? t("updateTo", { ver: p.update.to }) : t("noUpdate") }, "v" + p.version) : null,
+												p.version ? react.createElement("span", { className: "rps-ver" }, "v" + p.version) : null,
+												react.createElement("span", { className: "rps-kind", "data-kind": "self" }, t("selfTag")),
 												react.createElement("span", { className: "rps-plug-state", "data-st": st }, label),
-												p.update ? react.createElement("button", {
+												react.createElement("button", {
 													className: "rps-plug-btn",
 													"data-tone": "accent",
 													disabled: busy,
-													title: (p.update.via === "npm" ? "npm: " : "repo: ") + p.update.from + " → " + p.update.to,
-													onClick: () => act("/repo-sync/update", p.name, t("updating"))
-												}, t("updateTo", { ver: p.update.to })) : null,
+													onClick: () => act("/repo-sync/push-plugin", p.name, t("pushing"))
+												}, t("push")),
 												react.createElement("button", {
 													className: "rps-plug-btn",
+													"data-tone": "danger",
 													disabled: busy,
-													onClick: () => act("/repo-sync/push-plugin", p.name, p.linked ? t("commit") : t("sync"))
-												}, p.linked ? t("commit") : t("sync")),
+													onClick: () => act("/repo-sync/uninstall", p.name, t("uninstall"))
+												}, t("uninstall"))
+											);
+										})
+									),
+								react.createElement("div", { className: "rps-section" }, t("sectionCommunity")),
+								installed.filter((p) => p.kind === "community").length === 0
+									? react.createElement("div", { className: "rps-msg" }, t("noInstalled"))
+									: react.createElement("div", null,
+										installed.filter((p) => p.kind === "community").map((p) => {
+											const canUpdate = p.update && (p.update.via === "github" || (p.update.to && p.update.to !== "latest" && p.update.to !== p.version));
+											const label = canUpdate ? t("updateTo", { ver: p.update.to }) : t("upToDate");
+											return react.createElement("div", { className: "rps-plug", key: p.name },
+												react.createElement("span", { className: "rps-plug-name" }, p.name),
+												p.version ? react.createElement("span", { className: "rps-ver", "data-update": p.update ? "true" : undefined, title: p.update ? (p.update.from + " → " + p.update.to) : t("noUpdate") }, "v" + p.version) : null,
+												react.createElement("span", { className: "rps-kind", "data-kind": "community" }, t("communityTag")),
+												react.createElement("button", {
+													className: "rps-plug-btn",
+													"data-tone": canUpdate ? "accent" : undefined,
+													disabled: busy || !canUpdate,
+													title: p.update ? (p.update.via === "github" ? "github: " + p.update.from + " → latest" : p.update.from + " → " + p.update.to) : "",
+													onClick: () => act("/repo-sync/update", p.name, t("updating"))
+												}, label),
 												react.createElement("button", {
 													className: "rps-plug-btn",
 													"data-tone": "danger",
