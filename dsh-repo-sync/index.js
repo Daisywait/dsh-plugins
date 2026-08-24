@@ -890,9 +890,13 @@ async function pluginsSnapshot() {
         }
       }
     } else {
-      // 自制插件：git 是否有未推送改动（相对 HEAD，含未跟踪文件）→ 有改动才可推送
+      // 自制插件：工作区有改动（vs HEAD）或本地已提交但领先远端（ahead）→ 待推送。
+      // 只看 git status 会漏掉「已 commit 未 push」的情况。
       const dirty = await git(['status', '--porcelain', '--', p.name], 10000)
-      changed = dirty.code === 0 && dirty.out.trim() !== ''
+      const ahead = await git(['rev-list', '--count', 'origin/master..HEAD', '--', p.name], 10000)
+      const dirtyNow = dirty.code === 0 && dirty.out.trim() !== ''
+      const aheadNow = ahead.code === 0 && Number(ahead.out.trim()) > 0
+      changed = dirtyNow || aheadNow
     }
     installedOut.push({
       name: p.name,
@@ -957,11 +961,13 @@ async function pushPlugin(name) {
       return { ok: false, message: '复制失败: ' + String(e.message || e).slice(0, 300) }
     }
   }
-  // 只检查该插件目录相对 HEAD 是否有改动（含未跟踪文件）。无改动直接返回，
-  // 避免空 commit 报 "no changes added to commit"（之前误查整个仓库 status，
-  // 被其它插件的未提交改动干扰而永远走失败分支）。
+  // 待推送判定：工作区有改动（vs HEAD）或本地领先远端（已 commit 未 push）。
+  // 无改动直接返回，避免空 commit 报 "no changes added to commit"。
   const dirty = await git(['status', '--porcelain', '--', name], 10000)
-  if (dirty.code === 0 && dirty.out.trim() === '') {
+  const ahead = await git(['rev-list', '--count', 'origin/master..HEAD', '--', name], 10000)
+  const dirtyNow = dirty.code === 0 && dirty.out.trim() !== ''
+  const aheadNow = ahead.code === 0 && Number(ahead.out.trim()) > 0
+  if (!dirtyNow && !aheadNow) {
     return { ok: true, message: '无改动（已推送最新），无需推送', pushed: false }
   }
   // 发布语义：每次推送都应伴随版本号变化——除非用户已手动更新过版本号（比 HEAD 新）
@@ -987,27 +993,31 @@ async function pushPlugin(name) {
       return { ok: false, message: '自动更新版本号失败: ' + String(e.message || e).slice(0, 300) }
     }
   }
-  const add = await git(['add', '--', name], 30000)
-  if (add.code !== 0) return { ok: false, message: 'git add 失败: ' + (add.err || add.out).trim().slice(0, 300) }
-  const commitMsg = bumped
-    ? 'chore(plugins): sync ' + name + ' (v' + bumped.from + ' → v' + bumped.to + ')'
-    : 'chore(plugins): sync ' + name
-  const commit = await git(['commit', '-m', commitMsg], 30000)
-  if (commit.code !== 0) {
-    // 兜底：确认该插件目录在暂存区确实没有文件（例如 add 前后无变化）
-    const staged = await git(['diff', '--cached', '--name-only', '--', name], 10000)
-    if (staged.code === 0 && staged.out.trim() === '') {
-      return { ok: true, message: '无改动（已是最新），无需推送', pushed: false }
+  let committed = false
+  if (dirtyNow) {
+    const add = await git(['add', '--', name], 30000)
+    if (add.code !== 0) return { ok: false, message: 'git add 失败: ' + (add.err || add.out).trim().slice(0, 300) }
+    const commitMsg = bumped
+      ? 'chore(plugins): sync ' + name + ' (v' + bumped.from + ' → v' + bumped.to + ')'
+      : 'chore(plugins): sync ' + name
+    const commit = await git(['commit', '-m', commitMsg], 30000)
+    if (commit.code !== 0) {
+      // 兜底：确认该插件目录在暂存区确实没有文件（例如 add 前后无变化）
+      const staged = await git(['diff', '--cached', '--name-only', '--', name], 10000)
+      if (staged.code === 0 && staged.out.trim() === '') {
+        return { ok: true, message: '无改动（已是最新），无需推送', pushed: false }
+      }
+      return { ok: false, message: '提交失败: ' + (commit.err || commit.out).trim().slice(0, 300) }
     }
-    return { ok: false, message: '提交失败: ' + (commit.err || commit.out).trim().slice(0, 300) }
+    committed = true
   }
   const rem = await git(['remote', 'get-url', 'origin'], 10000)
   if (rem.code !== 0) {
-    return { ok: true, message: '已提交 ✓（未配置远程，未推送）', pushed: false, committed: true, bumped }
+    return { ok: true, message: '已提交 ✓（未配置远程，未推送）', pushed: false, committed, bumped }
   }
   const push = await git(['push', 'origin', 'HEAD'], 120000)
   if (push.code !== 0) {
-    return { ok: true, message: '已提交（推送失败: ' + (push.err || push.out).trim().slice(0, 120) + '）', committed: true, pushed: false, bumped }
+    return { ok: true, message: '已提交（推送失败: ' + (push.err || push.out).trim().slice(0, 120) + '）', committed, pushed: false, bumped }
   }
   state.lastSync = new Date().toISOString()
   return { ok: true, message: bumped ? '已推送 v' + bumped.to + ' ✓（自动更新版本号 v' + bumped.from + ' → v' + bumped.to + '）' : '已提交并推送 ✓', pushed: true, bumped }
