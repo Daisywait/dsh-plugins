@@ -1,0 +1,91 @@
+{
+  "name": "dsh-vision-recognizer",
+  "version": "0.2.0",
+  "description": "Adaptive image routing for DeepSeek Harness: pass images directly to native multimodal models and transcribe them only for text-only models.",
+  "private": false,
+  "type": "module",
+  "main": "lib/index.js",
+  "license": "MIT",
+  "author": {
+    "name": "dsh-vision-recognizer contributors"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kaixinbaba/dsh-vision-recognizer.git"
+  },
+  "homepage": "https://github.com/kaixinbaba/dsh-vision-recognizer#readme",
+  "bugs": {
+    "url": "https://github.com/kaixinbaba/dsh-vision-recognizer/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "plugin",
+    "vision",
+    "multimodal",
+    "image",
+    "image-understanding",
+    "ocr",
+    "vlm",
+    "qwen",
+    "dashscope",
+    "openai",
+    "anthropic",
+    "gemini",
+    "zhipu",
+    "ollama"
+  ],
+  "engines": {
+    "node": ">=22.19.0",
+    "dsh": ">=0.1.0-rc.8"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-theme"
+      ],
+      "platform": "web"
+    }
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "schemastery": "^3.18.0"
+  },
+  "scripts": {
+    "check": "node --check lib/index.js && node --check client/client.js && node --check tests/integration/*.test.js && node --check scripts/verify-plugin.mjs && node --check scripts/smoke-install.mjs",
+    "test": "npm run check && node --test tests/*.test.js && npm run test:integration",
+    "test:integration": "node --test tests/integration/*.test.js",
+    "verify:plugin": "node scripts/verify-plugin.mjs . --level=standard",
+    "smoke:install": "node scripts/smoke-install.mjs .",
+    "prepack": "npm test && npm run verify:plugin"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.8"
+  }
+}
