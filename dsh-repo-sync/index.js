@@ -678,7 +678,8 @@ function isPkgDir(dir) {
   if (!existsSync(pkgPath)) return false
   try {
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-    return !!(pkg.dsh && pkg.dsh.client)
+    // client 或 bundle 任一即可：纯 host 插件（如 dsh-skill-colleague）只有 bundle 没有 client
+    return !!(pkg.dsh && (pkg.dsh.client || pkg.dsh.bundle))
   } catch (e) { return false }
 }
 
@@ -709,7 +710,9 @@ function compareVersions(a, b) {
  *  只统计 profile package.json dependencies 里真实声明的插件——pnpm remove
  *  卸载 link: 依赖可能残留 node_modules 链接，残留目录不算已安装（否则点卸载
  *  会报 CANNOT_REMOVE_MISSING_DEPS）。
- *  kind 判定：依赖 spec 以 link: 开头 → 自制(self)；npm/github → 社区(community)。 */
+ *  kind 判定：依赖 spec 以 link: 开头 → 自制(self)；npm/github → 社区(community)。
+ *  scoped 包（@scope/name）在 node_modules 里是 @scope/name 二级目录，顶层 @scope
+ *  没有 package.json，必须展开 scope 目录逐个检查子包。 */
 function listInstalled() {
   const out = []
   let entries = []
@@ -719,21 +722,36 @@ function listInstalled() {
     const manifest = JSON.parse(readFileSync(join(PROFILE_DIR, 'package.json'), 'utf8'))
     deps = manifest.dependencies || {}
   } catch (e) { /* 读不到清单时退回全部扫描 */ }
-  for (const ent of entries) {
-    if (!ent.isDirectory() && !ent.isSymbolicLink()) continue
-    if (!isPkgDir(join(PLUGIN_ROOT, ent.name))) continue
-    if (!(ent.name in deps)) continue
+  /** 检查单个包目录（name 为完整包名，如 dsh-meme 或 @scope/name）。 */
+  const push = (name, dir) => {
+    if (!isPkgDir(dir)) return
+    if (!(name in deps)) return
     let linked = false
-    try { linked = lstatSync(join(PLUGIN_ROOT, ent.name)).isSymbolicLink() } catch (e) {}
-    const spec = String(deps[ent.name] || '')
+    try { linked = lstatSync(dir).isSymbolicLink() } catch (e) {}
+    const spec = String(deps[name] || '')
     out.push({
-      name: ent.name,
-      dir: join(PLUGIN_ROOT, ent.name),
+      name,
+      dir,
       linked,
-      version: pkgVersion(join(PLUGIN_ROOT, ent.name)),
+      version: pkgVersion(dir),
       kind: spec.startsWith('link:') ? 'self' : 'community',
       spec
     })
+  }
+  for (const ent of entries) {
+    if (!ent.isDirectory() && !ent.isSymbolicLink()) continue
+    const topDir = join(PLUGIN_ROOT, ent.name)
+    if (ent.name.startsWith('@')) {
+      // scoped 包：遍历 @scope 下的子包
+      let subs = []
+      try { subs = readdirSync(topDir, { withFileTypes: true }) } catch (e) { continue }
+      for (const sub of subs) {
+        if (!sub.isDirectory() && !sub.isSymbolicLink()) continue
+        push(ent.name + '/' + sub.name, join(topDir, sub.name))
+      }
+    } else {
+      push(ent.name, topDir)
+    }
   }
   return out
 }
