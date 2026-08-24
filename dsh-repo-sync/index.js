@@ -90,6 +90,7 @@ const NPM_SEARCH_TEXT = [
 const KNOWN_COMMUNITY_PACKAGES = [
   '@linxin666/dsh-web-ui-all',
   '@omdsh-dev/dsh-genui',
+  '@modusensus/dsh-mneme',
 ]
 
 /** GitHub topic 源：topic=dsh-plugin 的仓库（HTML 抓取，带 star 与描述）。 */
