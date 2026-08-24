@@ -874,7 +874,7 @@ async function pluginsSnapshot() {
   for (const p of installed) {
     const repoDir = join(PLUGINS_REPO, p.name)
     const inRepo = repoDirs.has(p.name)
-    const changed = p.linked ? false : (inRepo ? dirHash(p.dir) !== dirHash(repoDir) : true)
+    let changed = p.linked ? false : (inRepo ? dirHash(p.dir) !== dirHash(repoDir) : true)
     let update = null
     if (p.kind === 'community') {
       // 社区插件：npm 源查 registry 最新版；github 源抓仓库 package.json 版本
