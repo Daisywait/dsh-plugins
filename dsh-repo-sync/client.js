@@ -804,7 +804,7 @@ window.__ModuleLoader__.load({
 													disabled: busy || !dirty,
 													title: dirty ? t("pushHint") : t("noChange"),
 													onClick: () => act("/repo-sync/push-plugin", p.name, t("pushing"))
-												}, dirty ? t("push") : t("noChange")),
+												}, t("push")),
 												react.createElement("button", {
 													className: "rps-plug-btn",
 													"data-tone": "danger",
