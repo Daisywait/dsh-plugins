@@ -757,6 +757,43 @@ async function npmLatestVersion(name) {
   }
 }
 
+/** GitHub 直装源最新版查询：抓仓库默认分支 package.json 的 version（缓存 1 小时）。 */
+const githubLatestCache = new Map()
+const GITHUB_LATEST_TTL = 60 * 60 * 1000
+
+/** github:owner/repo 或 github:owner/repo#branch → 提取 owner/repo。 */
+function githubRepoOfSpec(spec) {
+  const m = /^github:([^#\s]+)/.exec(String(spec || ''))
+  return m ? m[1] : ''
+}
+
+async function githubLatestVersion(spec) {
+  const repo = githubRepoOfSpec(spec)
+  if (!repo) return ''
+  const now = Date.now()
+  const cached = githubLatestCache.get(repo)
+  if (cached && now - cached.at < GITHUB_LATEST_TTL) return cached.version
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 12000)
+    const res = await fetch('https://raw.githubusercontent.com/' + repo + '/HEAD/package.json', {
+      signal: ctrl.signal,
+      headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120' }
+    })
+    clearTimeout(timer)
+    let version = ''
+    if (res.ok) {
+      const pkg = await res.json()
+      version = String(pkg.version || '')
+    }
+    githubLatestCache.set(repo, { version, at: now })
+    return version
+  } catch (e) {
+    githubLatestCache.set(repo, { version: '', at: now })
+    return ''
+  }
+}
+
 /** 扫描插件仓库（dsh-plugins 里带 dsh.client 的目录）。
  *  source: 'self' 自制（无外部 repository）；'community-copy' 社区插件副本
  *  （package.json 声明了外部 GitHub repository，如 dsh-meme、dsh-vision-recognizer）——
@@ -814,9 +851,12 @@ async function pluginsSnapshot() {
     const changed = p.linked ? false : (inRepo ? dirHash(p.dir) !== dirHash(repoDir) : true)
     let update = null
     if (p.kind === 'community') {
-      // 社区插件：npm 源查 registry 最新版；github 源总是可更新（重新拉取）
+      // 社区插件：npm 源查 registry 最新版；github 源抓仓库 package.json 版本
       if (p.spec.startsWith('github:')) {
-        update = { via: 'github', from: p.version, to: 'latest' }
+        const latest = await githubLatestVersion(p.spec)
+        if (latest && p.version && compareVersions(latest, p.version) > 0) {
+          update = { via: 'github', from: p.version, to: latest }
+        }
       } else {
         const latest = await npmLatestVersion(p.name)
         if (latest && p.version && compareVersions(latest, p.version) > 0) {
@@ -927,7 +967,11 @@ async function updatePlugin(name) {
   if (found.kind !== 'community') return { ok: false, message: name + ' 是自制插件，请使用「推送」同步到远端' }
   let spec = ''
   if (found.spec.startsWith('github:')) {
-    // github 直装源：按原 spec 重新 add（拉取默认分支最新）
+    // github 直装源：抓仓库 package.json 版本；有新版本按原 spec 重新 add（拉取默认分支最新）
+    const ghLatest = await githubLatestVersion(found.spec)
+    if (ghLatest && found.version && compareVersions(ghLatest, found.version) <= 0) {
+      return { ok: true, message: '已是最新版本 v' + found.version, updated: false }
+    }
     spec = found.spec
   } else {
     const latest = await npmLatestVersion(name)

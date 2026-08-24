@@ -813,7 +813,7 @@ window.__ModuleLoader__.load({
 									? react.createElement("div", { className: "rps-msg" }, t("noInstalled"))
 									: react.createElement("div", null,
 										installed.filter((p) => p.kind === "community").map((p) => {
-											const canUpdate = p.update && (p.update.via === "github" || (p.update.to && p.update.to !== "latest" && p.update.to !== p.version));
+											const canUpdate = !!(p.update && p.update.to && p.update.to !== p.version);
 											const label = canUpdate ? t("updateTo", { ver: p.update.to }) : t("upToDate");
 											return react.createElement("div", { className: "rps-plug", key: p.name },
 												react.createElement("span", { className: "rps-plug-name" }, p.name),
@@ -823,7 +823,7 @@ window.__ModuleLoader__.load({
 													className: "rps-plug-btn",
 													"data-tone": canUpdate ? "accent" : undefined,
 													disabled: busy || !canUpdate,
-													title: p.update ? (p.update.via === "github" ? "github: " + p.update.from + " → latest" : p.update.from + " → " + p.update.to) : "",
+													title: p.update ? (p.update.via === "github" ? "github: " + p.update.from + " → " + p.update.to : p.update.from + " → " + p.update.to) : "",
 													onClick: () => act("/repo-sync/update", p.name, t("updating"))
 												}, label),
 												react.createElement("button", {
