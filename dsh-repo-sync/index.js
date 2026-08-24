@@ -964,25 +964,27 @@ async function pushPlugin(name) {
   if (dirty.code === 0 && dirty.out.trim() === '') {
     return { ok: true, message: '无改动（已推送最新），无需推送', pushed: false }
   }
-  // 发布语义：对比 git HEAD 里该插件 package.json 的版本号
+  // 发布语义：每次推送都应伴随版本号变化——除非用户已手动更新过版本号（比 HEAD 新）
   let bumped = null
+  const curVer = found.version || ''
+  let headVer = ''
   const headPkg = await git(['show', 'HEAD:' + name + '/package.json'], 10000)
   if (headPkg.code === 0 && headPkg.out.trim() !== '') {
-    let headVer = ''
     try { headVer = String(JSON.parse(headPkg.out).version || '') } catch (e) {}
-    const curVer = found.version || ''
-    if (headVer && curVer && compareVersions(curVer, headVer) === 0) {
-      // 版本号没变 → 自动 bump patch
-      const next = bumpPatchVersion(curVer)
-      try {
-        const pkgPath = join(repoDir, 'package.json')
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-        pkg.version = next
-        writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
-        bumped = { from: curVer, to: next }
-      } catch (e) {
-        return { ok: false, message: '自动更新版本号失败: ' + String(e.message || e).slice(0, 300) }
-      }
+  }
+  if (headVer && curVer && compareVersions(curVer, headVer) > 0) {
+    // 用户已手动更新版本号（比 HEAD 新）→ 尊重，不 bump
+  } else {
+    // HEAD 无历史（首次推送）或版本号未变 → 自动 bump patch
+    const next = bumpPatchVersion(curVer || '1.0.0')
+    try {
+      const pkgPath = join(repoDir, 'package.json')
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+      pkg.version = next
+      writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
+      bumped = { from: curVer || '1.0.0', to: next }
+    } catch (e) {
+      return { ok: false, message: '自动更新版本号失败: ' + String(e.message || e).slice(0, 300) }
     }
   }
   const add = await git(['add', '--', name], 30000)
