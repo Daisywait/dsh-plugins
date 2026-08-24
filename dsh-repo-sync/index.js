@@ -885,12 +885,22 @@ async function pushPlugin(name) {
       return { ok: false, message: '复制失败: ' + String(e.message || e).slice(0, 300) }
     }
   }
-  const add = await git(['add', name], 30000)
+  // 只检查该插件目录相对 HEAD 是否有改动（含未跟踪文件）。无改动直接返回，
+  // 避免空 commit 报 "no changes added to commit"（之前误查整个仓库 status，
+  // 被其它插件的未提交改动干扰而永远走失败分支）。
+  const dirty = await git(['status', '--porcelain', '--', name], 10000)
+  if (dirty.code === 0 && dirty.out.trim() === '') {
+    return { ok: true, message: '无变更（已是最新），无需推送', pushed: false }
+  }
+  const add = await git(['add', '--', name], 30000)
   if (add.code !== 0) return { ok: false, message: 'git add 失败: ' + (add.err || add.out).trim().slice(0, 300) }
   const commit = await git(['commit', '-m', 'chore(plugins): sync ' + name], 30000)
   if (commit.code !== 0) {
-    const status = await git(['status', '--porcelain'], 10000)
-    if (status.out.trim() === '') return { ok: true, message: '无变更（已是最新）', pushed: false }
+    // 兜底：确认该插件目录在暂存区确实没有文件（例如 add 前后无变化）
+    const staged = await git(['diff', '--cached', '--name-only', '--', name], 10000)
+    if (staged.code === 0 && staged.out.trim() === '') {
+      return { ok: true, message: '无变更（已是最新），无需推送', pushed: false }
+    }
     return { ok: false, message: '提交失败: ' + (commit.err || commit.out).trim().slice(0, 300) }
   }
   const rem = await git(['remote', 'get-url', 'origin'], 10000)
