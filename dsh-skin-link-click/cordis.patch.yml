@@ -1,0 +1,6 @@
+# dsh-skin-link-click bundle patch — Link Click（《时光代理人》）皮肤，独立插件。
+# 从 dsh-web-ui 皮肤集合中独立出来：壁纸 + 暖粉毛玻璃主题（明暗双套）+
+# 右侧栏调节面板（透明度/壁纸位置/大小/GenUI 浓度/自定义壁纸）。
+- insert:
+    - id: skin-link-click
+      name: 'dsh-skin-link-click'
