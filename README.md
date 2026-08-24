@@ -79,7 +79,7 @@ dsh plugin --profile web remove dsh-video
 | dsh-quote | 消息引用：助手消息操作区 ⤴ 按钮，把该消息文本带进输入框（方便引用上下文） |
 | dsh-video | 视频工作室：会话头部「视频」标签页。Remotion 实时预览（标题卡/结束卡两种合成，可改文字、配色、Emoji、时长/帧率），一键渲染 H.264 MP4（720p/1080p），「全屏预览」在新浏览器标签页打开交互工作室。**智能体可直接调用 `video_render` / `video_job_status` 工具生成视频** |
 | dsh-board | 会话看板：会话头部「🗂 状态」给会话打标（📌待办 / 🧪待测试 / ✅完成），「看板」标签页三列卡片可拖拽改状态、加备注，点卡片直达会话 |
-| dsh-session-log | 会话归档：像关闭 GitHub Issue 一样结束会话。输入框上方「🏁 会话收尾」按钮（或直接对 AI 说「结束这个会话并总结」）→ AI 调用 `session_close` 生成结构化总结（目标/做了什么/解决了什么问题/产出/遗留事项/标签）存档到 `~\.dsh\session-log\`（index.json + 每条一份 Markdown），「归档」标签页可搜索浏览、重开/再关闭、复制总结、跳回原会话；`session_log_list` 工具供后续会话回顾历史成果 |
+| dsh-session-log | 会话归档：像关闭 GitHub Issue 一样结束会话。输入框上方「🏁 会话收尾」按钮（或直接对 AI 说「结束这个会话并总结」）→ AI 调用 `session_close` 生成结构化总结（目标/做了什么/解决了什么问题/产出/遗留事项/标签）存档到 `~\.dsh\session-log\`（index.json + 每条一份 Markdown），「归档」标签页可搜索浏览、重开/再关闭、复制总结、跳回原会话；侧栏底部「🏁 已归档」折叠分组直达条目；`session_log_list` 工具供后续会话回顾历史成果。会话关联：收尾按钮显式传 sessionId，多会话同开时按最近事件时间兜底推断 |
 
 ## 开发流程
 

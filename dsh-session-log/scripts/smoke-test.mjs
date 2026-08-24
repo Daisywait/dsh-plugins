@@ -170,6 +170,54 @@ const mod2 = await import(pathToFileURL(join(process.cwd(), 'index.js')).href + 
   check('重启后数据仍在（共 1 条）', r6.total === 1)
 }
 
+console.log('== 多会话同开 → 按最近事件时间推断 ==')
+{
+  const now = Date.now()
+  const sqMulti = {
+    async listSessions() {
+      return [
+        { live: true, header: { id: 'sess_old_chat', createdAt: now - 7200e3 } },
+        { live: true, header: { id: 'sess_fresh', createdAt: now - 3600e3 } },
+        { live: false, header: { id: 'sess_dead', createdAt: now } },
+      ]
+    },
+    async listEvents(id) {
+      if (id === 'sess_old_chat') return [{ seq: 9, time: now - 60 * 60000 }]
+      if (id === 'sess_fresh') return [{ seq: 3, time: now - 2 * 60000 }]
+      return []
+    },
+    async readTitle(id) { return { title: id === 'sess_fresh' ? '新会话' : '旧会话' } },
+  }
+  const ctxReg = []
+  mod.apply({
+    inject(deps, fn) { if (deps[0] === 'tools') fn({ tools: { register: (t) => ctxReg.push(t) } }) },
+    effect(fn) { fn() },
+    get(name) { return name === 'sessionQuery' ? sqMulti : undefined },
+  })
+  const ct = ctxReg.find((t) => t.name === 'session_close')
+  const r = await ct.execute({ title: '多会话推断测试', summary: '应选中最活跃的会话。' })
+  check('关闭成功（推断不抛错）', r.ok === true)
+  const idxData = JSON.parse(readFileSync(join(process.env.DSH_SESSION_LOG_DIR, 'index.json'), 'utf8'))
+  const mine = idxData.find((x) => x.title === '多会话推断测试')
+  check('选中了最近活跃的 sess_fresh', !!mine && mine.sessionId === 'sess_fresh')
+}
+
+console.log('== 显式 sessionId 参数短路 ==')
+{
+  const ctxReg = []
+  mod.apply({
+    inject(deps, fn) { if (deps[0] === 'tools') fn({ tools: { register: (t) => ctxReg.push(t) } }) },
+    effect(fn) { fn() },
+    get() { return undefined },
+  })
+  const ct = ctxReg.find((t) => t.name === 'session_close')
+  const r = await ct.execute({ title: '显式ID测试', summary: '客户端传来的确定会话。', sessionId: 'sess_explicit_42' })
+  check('ok=true', r.ok === true)
+  const idxData2 = JSON.parse(readFileSync(join(process.env.DSH_SESSION_LOG_DIR, 'index.json'), 'utf8'))
+  const mine2 = idxData2.find((x) => x.title === '显式ID测试')
+  check('条目关联到 sess_explicit_42', !!mine2 && mine2.sessionId === 'sess_explicit_42')
+}
+
 console.log('')
 if (failures.length > 0) {
   console.error('失败 ' + failures.length + ' 项：\n- ' + failures.join('\n- '))

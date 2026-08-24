@@ -223,7 +223,15 @@ window.__ModuleLoader__.load({
 					if (!window.confirm("发送会话收尾请求？\n\nAI 将基于本次对话生成结构化总结（做了什么 / 解决了什么 / 产出 / 遗留），并像关闭 Issue 一样写入归档。")) return;
 					setBusy(true);
 					try {
-						ia.setDraft(CLOSE_PROMPT);
+						var sid = "";
+						try {
+							var sn = props && props.session;
+							var raw = sn && (sn.id !== undefined ? sn.id : (sn.header && sn.header.id));
+							if (raw !== undefined && raw !== null) sid = String(raw);
+						} catch (e) {}
+						var prompt = CLOSE_PROMPT;
+						if (sid) prompt += "\n\n（当前会话ID：" + sid + " —— 请把它作为 session_close 工具的 sessionId 参数传入，用于关联回原会话。）";
+						ia.setDraft(prompt);
 						setTimeout(function () {
 							try { ia.submit(); } catch (e) {}
 							setBusy(false);
@@ -244,10 +252,82 @@ window.__ModuleLoader__.load({
 				);
 			}
 
+			// ---- 侧栏：「🏁 已归档」折叠分组（官方 sidebar.workspaces 槽位，纯增量） ----
+			function SidebarArchive(props) {
+				var wide = !!(props && props.wide);
+				var s = useStore();
+				var openPair = react.useState(false);
+				var open = openPair[0];
+				var setOpen = openPair[1];
+				var detailPair = react.useState(null);
+				var detail = detailPair[0];
+				var setDetail = detailPair[1];
+				react.useEffect(function () {
+					refresh();
+					var timer = setInterval(refresh, 60000);
+					return function () { clearInterval(timer); };
+				}, []);
+				if (!wide || s.items.length === 0) return null;
+				var headerEl = react.createElement("div", {
+					onClick: function () { var n = !open; setOpen(n); if (n && s.items.length === 0) refresh(); },
+					style: {
+						display: "flex", alignItems: "center", gap: 6,
+						padding: "6px 12px", margin: "2px 8px", borderRadius: 8,
+						cursor: "pointer", userSelect: "none", color: C.muted, fontSize: 12
+					},
+					title: "已收尾归档的会话（像关闭的 GitHub Issue）"
+				},
+					react.createElement("span", null, "🏁"),
+					react.createElement("span", { style: { flex: 1 } }, "已归档"),
+					react.createElement("span", { style: { opacity: 0.75 } }, String(s.items.length)),
+					react.createElement("span", { style: { fontSize: 10, display: "inline-block", transition: "transform .15s", transform: open ? "rotate(90deg)" : "none" } }, "▶")
+				);
+				var bodyEl = null;
+				if (open) {
+					bodyEl = react.createElement("div", { style: { margin: "0 8px 6px" } },
+						s.items.map(function (it) {
+							var isDetail = detail === it.number;
+							var rowChildren = [
+								react.createElement("span", { key: "n", style: { color: C.accent, flexShrink: 0 } }, "#" + it.number),
+								react.createElement("span", { key: "t", style: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, it.title)
+							];
+							if (it.state === "open") rowChildren.push(react.createElement("span", { key: "o", style: { flexShrink: 0, fontSize: 10 } }, "🔓"));
+							return react.createElement("div", { key: it.number },
+								react.createElement("div", {
+									onClick: function () {
+										if (it.sessionId) { openSession(it.sessionId); return; }
+										setDetail(isDetail ? null : it.number);
+									},
+									title: it.sessionId ? "打开原会话" : "未关联会话 · 点击展开总结",
+									style: {
+										display: "flex", alignItems: "center", gap: 6,
+										padding: "4px 8px", borderRadius: 6, cursor: "pointer",
+										fontSize: 12, color: C.text
+									},
+									onMouseEnter: function (e) { e.currentTarget.style.background = C.hover; },
+									onMouseLeave: function (e) { e.currentTarget.style.background = "transparent"; }
+								}, rowChildren),
+								(isDetail && !it.sessionId) ? react.createElement("div", {
+									style: {
+										margin: "2px 8px 6px", padding: "6px 8px", maxHeight: 180, overflowY: "auto",
+										background: C.bgLayer, border: "1px solid " + C.border, borderRadius: 8,
+										fontSize: 11.5, lineHeight: 1.6, color: C.muted,
+										whiteSpace: "pre-wrap", wordBreak: "break-word"
+									}
+								}, it.summary || "（无总结）") : null
+							);
+						})
+					);
+				}
+				return react.createElement("div", { style: { borderTop: "1px solid " + C.border, marginTop: 4, paddingTop: 2 } },
+					headerEl, bodyEl
+				);
+			}
+
 			// ---- 槽位注入 ----
 			var slots = ctx.get("slots");
 			ctx.effect(function () {
-				var d1, d2;
+				var d1, d2, d3;
 				if (slots !== undefined) {
 					d1 = slots.inject("conversation.view", function () {
 						return slots.register(
@@ -261,12 +341,19 @@ window.__ModuleLoader__.load({
 							function (props) { return react.createElement(CloseBar, props); }
 						);
 					});
+					d3 = slots.inject("sidebar.workspaces", function () {
+						return slots.register(
+							{ name: "sidebar.workspaces", id: "session-log-sidebar", order: 900 },
+							function (props) { return react.createElement(SidebarArchive, props); }
+						);
+					});
 				}
 				return function () {
 					try { if (d1) d1(); } catch (e) {}
 					try { if (d2) d2(); } catch (e) {}
+					try { if (d3) d3(); } catch (e) {}
 				};
-			}, "dsh-session-log: 归档标签页与收尾按钮");
+			}, "dsh-session-log: 归档标签页、收尾按钮与侧栏分组");
 		}
 
 		exports.apply = apply;

@@ -123,18 +123,47 @@ async function resolveSession(ctx) {
     try {
       const recs = await sq.listSessions()
       const live = (recs || []).filter((r) => r && r.live && r.header && r.header.origin !== 'subagent')
-      if (live.length === 1) {
-        const id = live[0].header.id
+      // Rank live candidates by latest event time: the session being closed
+      // almost certainly has the freshest model activity.
+      let best = null
+      let bestTime = -1
+      for (const rec of live) {
+        let t = (rec.header.createdAt || 0)
+        try {
+          if (typeof sq.listEvents === 'function') {
+            const evs = await sq.listEvents(rec.header.id)
+            if (Array.isArray(evs) && evs.length > 0) {
+              const last = evs[evs.length - 1]
+              if (last && typeof last.time === 'number' && last.time > t) t = last.time
+            }
+          }
+        } catch (err) {}
+        if (t > bestTime) { bestTime = t; best = rec }
+      }
+      if (!best) return { sessionId: null, sessionTitle: null }
+      {
+        const id = best.header.id
         let title = null
         try {
           const snap = sq.readTitle ? await sq.readTitle(id) : undefined
           if (snap && typeof snap.title === 'string' && snap.title !== '') title = snap.title
-        } catch (e) {}
+        } catch (err) {}
         return { sessionId: id, sessionTitle: title }
       }
     } catch (e) {}
   }
   return { sessionId: null, sessionTitle: null }
+}
+
+// 显式 sessionId 短路：只补标题，不做任何推断
+async function sessionInfoById(ctx, id) {
+  const sq = ctx.get('sessionQuery')
+  let title = null
+  try {
+    const snap = sq && sq.readTitle ? await sq.readTitle(id) : undefined
+    if (snap && typeof snap.title === 'string' && snap.title !== '') title = snap.title
+  } catch (e) {}
+  return { sessionId: id, sessionTitle: title }
 }
 
 // ---------- 关闭 / 更新 ----------
@@ -214,6 +243,7 @@ function registerTools(ctx) {
           artifacts: { type: 'array', items: { type: 'string' }, description: '产出文件/成果（带路径）' },
           leftovers: { type: 'array', items: { type: 'string' }, description: '遗留事项与后续建议' },
           labels: { type: 'array', items: { type: 'string' }, description: '主题标签（1-4 个）' },
+          sessionId: { type: 'string', description: '当前会话ID（客户端收尾指令会提供；不知道就别填）' },
         },
         required: ['title', 'summary'],
         additionalProperties: false,
@@ -252,7 +282,8 @@ function registerTools(ctx) {
           if (!title || !summary) {
             return { ok: false, number: 0, title: '', state: '', mode: '', total: issues.length, markdownPath: '', error: '缺少必填参数 title/summary' }
           }
-          const sess = await resolveSession(ctx)
+          const hintId = strArg(a.sessionId)
+          const sess = hintId ? await sessionInfoById(ctx, hintId) : await resolveSession(ctx)
           const norm = {
             title,
             summary,
