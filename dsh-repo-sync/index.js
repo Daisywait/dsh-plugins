@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import {
-  readdirSync, readFileSync, existsSync, cpSync, lstatSync, rmSync
+  readdirSync, readFileSync, existsSync, cpSync, lstatSync, rmSync, writeFileSync
 } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -704,6 +704,13 @@ function compareVersions(a, b) {
   return 0
 }
 
+/** patch 版本 +1：1.0.0 → 1.0.1；非 semver 则追加 .1。 */
+function bumpPatchVersion(v) {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''))
+  if (!m) return String(v || '1.0.0') + '.1'
+  return m[1] + '.' + m[2] + '.' + (Number(m[3]) + 1)
+}
+
 /** 扫描已安装插件（profile node_modules 里带 dsh.client 的目录）。
  *  pnpm link: 装的插件在 node_modules 里是 junction，dirent.isDirectory() 为 false
  *  （lstat 语义不跟随链接），必须同时接受 isSymbolicLink()。
@@ -882,6 +889,10 @@ async function pluginsSnapshot() {
           update = { via: 'npm', from: p.version, to: latest }
         }
       }
+    } else {
+      // 自制插件：git 是否有未推送改动（相对 HEAD，含未跟踪文件）→ 有改动才可推送
+      const dirty = await git(['status', '--porcelain', '--', p.name], 10000)
+      changed = dirty.code === 0 && dirty.out.trim() !== ''
     }
     installedOut.push({
       name: p.name,
@@ -930,7 +941,9 @@ async function uninstallPlugin(name) {
     : '卸载失败（dsh plugin 退出码 ' + r.code + '）' + hint + (detail ? '：' + detail.slice(0, 160) : ''), removed }
 }
 
-/** 推送自制插件到远端（链接模式跳过复制，直接 git）。社区插件拒绝。 */
+/** 推送自制插件到远端（链接模式跳过复制，直接 git）。社区插件拒绝。
+ *  发布语义：无改动 → 提示无需推送；有改动 → 若版本号相对上次推送未变，
+ *  自动 bump patch（1.0.0 → 1.0.1）再提交推送；用户已手动改过版本号则尊重。 */
 async function pushPlugin(name) {
   const found = listInstalled().find((p) => p.name === name)
   if (!found) return { ok: false, message: '未找到插件 ' + name }
@@ -949,29 +962,53 @@ async function pushPlugin(name) {
   // 被其它插件的未提交改动干扰而永远走失败分支）。
   const dirty = await git(['status', '--porcelain', '--', name], 10000)
   if (dirty.code === 0 && dirty.out.trim() === '') {
-    return { ok: true, message: '无变更（已是最新），无需推送', pushed: false }
+    return { ok: true, message: '无改动（已推送最新），无需推送', pushed: false }
+  }
+  // 发布语义：对比 git HEAD 里该插件 package.json 的版本号
+  let bumped = null
+  const headPkg = await git(['show', 'HEAD:' + name + '/package.json'], 10000)
+  if (headPkg.code === 0 && headPkg.out.trim() !== '') {
+    let headVer = ''
+    try { headVer = String(JSON.parse(headPkg.out).version || '') } catch (e) {}
+    const curVer = found.version || ''
+    if (headVer && curVer && compareVersions(curVer, headVer) === 0) {
+      // 版本号没变 → 自动 bump patch
+      const next = bumpPatchVersion(curVer)
+      try {
+        const pkgPath = join(repoDir, 'package.json')
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+        pkg.version = next
+        writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
+        bumped = { from: curVer, to: next }
+      } catch (e) {
+        return { ok: false, message: '自动更新版本号失败: ' + String(e.message || e).slice(0, 300) }
+      }
+    }
   }
   const add = await git(['add', '--', name], 30000)
   if (add.code !== 0) return { ok: false, message: 'git add 失败: ' + (add.err || add.out).trim().slice(0, 300) }
-  const commit = await git(['commit', '-m', 'chore(plugins): sync ' + name], 30000)
+  const commitMsg = bumped
+    ? 'chore(plugins): sync ' + name + ' (v' + bumped.from + ' → v' + bumped.to + ')'
+    : 'chore(plugins): sync ' + name
+  const commit = await git(['commit', '-m', commitMsg], 30000)
   if (commit.code !== 0) {
     // 兜底：确认该插件目录在暂存区确实没有文件（例如 add 前后无变化）
     const staged = await git(['diff', '--cached', '--name-only', '--', name], 10000)
     if (staged.code === 0 && staged.out.trim() === '') {
-      return { ok: true, message: '无变更（已是最新），无需推送', pushed: false }
+      return { ok: true, message: '无改动（已是最新），无需推送', pushed: false }
     }
     return { ok: false, message: '提交失败: ' + (commit.err || commit.out).trim().slice(0, 300) }
   }
   const rem = await git(['remote', 'get-url', 'origin'], 10000)
   if (rem.code !== 0) {
-    return { ok: true, message: '已提交 ✓（未配置远程，未推送）', pushed: false, committed: true }
+    return { ok: true, message: '已提交 ✓（未配置远程，未推送）', pushed: false, committed: true, bumped }
   }
   const push = await git(['push', 'origin', 'HEAD'], 120000)
   if (push.code !== 0) {
-    return { ok: true, message: '已提交（推送失败: ' + (push.err || push.out).trim().slice(0, 120) + '）', committed: true, pushed: false }
+    return { ok: true, message: '已提交（推送失败: ' + (push.err || push.out).trim().slice(0, 120) + '）', committed: true, pushed: false, bumped }
   }
   state.lastSync = new Date().toISOString()
-  return { ok: true, message: '已提交并推送 ✓', pushed: true }
+  return { ok: true, message: bumped ? '已推送 v' + bumped.to + ' ✓（自动更新版本号 v' + bumped.from + ' → v' + bumped.to + '）' : '已提交并推送 ✓', pushed: true, bumped }
 }
 
 /**

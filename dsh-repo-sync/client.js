@@ -141,6 +141,8 @@ window.__ModuleLoader__.load({
 					notInRepo: "未入库",
 					changed: "有改动",
 					synced: "已同步",
+					noChange: "无改动",
+					pushHint: "推送将自动更新版本号（patch +1）并推到远端",
 					commit: "提交",
 					sync: "同步",
 					push: "推送",
@@ -201,6 +203,8 @@ window.__ModuleLoader__.load({
 					notInRepo: "not in repo",
 					changed: "modified",
 					synced: "synced",
+					noChange: "no changes",
+					pushHint: "Push will auto-bump version (patch +1) and push to remote",
 					commit: "Commit",
 					sync: "Sync",
 					push: "Push",
@@ -786,8 +790,9 @@ window.__ModuleLoader__.load({
 									? react.createElement("div", { className: "rps-msg" }, t("noInstalled"))
 									: react.createElement("div", null,
 										installed.filter((p) => p.kind === "self").map((p) => {
-											const st = p.linked ? "link" : (!p.inRepo ? "none" : (p.changed ? "dirty" : "ok"));
-											const label = p.linked ? t("linkedMode") : (!p.inRepo ? t("notInRepo") : (p.changed ? t("changed") : t("synced")));
+											const dirty = !!p.changed;
+											const st = dirty ? "dirty" : "ok";
+											const label = dirty ? t("changed") : t("noChange");
 											return react.createElement("div", { className: "rps-plug", key: p.name },
 												react.createElement("span", { className: "rps-plug-name" }, p.name),
 												p.version ? react.createElement("span", { className: "rps-ver" }, "v" + p.version) : null,
@@ -796,9 +801,10 @@ window.__ModuleLoader__.load({
 												react.createElement("button", {
 													className: "rps-plug-btn",
 													"data-tone": "accent",
-													disabled: busy,
+													disabled: busy || !dirty,
+													title: dirty ? t("pushHint") : t("noChange"),
 													onClick: () => act("/repo-sync/push-plugin", p.name, t("pushing"))
-												}, t("push")),
+												}, dirty ? t("push") : t("noChange")),
 												react.createElement("button", {
 													className: "rps-plug-btn",
 													"data-tone": "danger",
